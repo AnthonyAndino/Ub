@@ -21,6 +21,9 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "Control de Gastos",
   description: "Control de ingresos y gastos familiar",
+  icons: {
+    icon: "/favicon.svg",
+  },
 }
 
 export default function RootLayout({
