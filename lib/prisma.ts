@@ -5,10 +5,7 @@ import { Pool } from "pg"
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
 
 let connectionString = process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL || ""
-if (!connectionString.includes("sslmode=")) {
-  connectionString += (connectionString.includes("?") ? "&" : "?") + "uselibpqcompat=true&sslmode=require"
-}
-const pool = new Pool({ connectionString })
+const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } })
 const adapter = new PrismaPg(pool)
 
 export const prisma =
