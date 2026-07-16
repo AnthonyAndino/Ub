@@ -1,12 +1,44 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model Transaction {
+  id             String       @id @default(cuid())
+  type           String       @default("income")
+  amount         Decimal      @db.Decimal(10, 2)
+  category       String
+  description    String?
+  date           DateTime
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  wishlistItemId String?
+  wishlistItem   WishlistItem? @relation(fields: [wishlistItemId], references: [id])
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String?
+  email          String          @unique
+  password       String
+  transactions   Transaction[]
+  wishlistItems  WishlistItem[]
+  createdAt      DateTime        @default(now())
+}
+
+model WishlistItem {
+  id             String        @id @default(cuid())
+  name           String
+  estimatedPrice Decimal?      @db.Decimal(10, 2)
+  priority       String        @default("media")
+  purchased      Boolean       @default(false)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  transactions   Transaction[]
+  createdAt      DateTime      @default(now())
 }
