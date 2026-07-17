@@ -1,39 +1,45 @@
 # Personal Finance Manager
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Aplicación web para llevar el control de ingresos y gastos personales. Diseñada para personas sin experiencia con tecnología: interfaz simple, botones grandes, texto claro.
+
+**Demo en producción:** [finance-manager-anthony.vercel.app](https://finance-manager-anthony.vercel.app)
 
 ## Funcionalidades
 
-- **Dashboard** — resumen del mes actual: ingresos, gastos, saldo neto
-- **Ingresos/Gastos** — registrar transacciones por tipo, categoría, monto y fecha
+- **Dashboard** — resumen del mes: ingresos, gastos y saldo en USD y LPS
+- **Multi-moneda** — registra transacciones en dólares ($) o lempiras (L), con tipo de cambio por operación
+- **Ingresos / Gastos** — registrar transacciones por tipo, categoría, monto, moneda y fecha
 - **Historial** — tabla interactiva con búsqueda, ordenamiento y paginación
-- **Gráficos** — distribución de gastos por categoría y evolución mensual
-- **Lista de deseos** — productos que quieres comprar, con link y prioridad
-- **Exportar a Excel** — descarga todas las transacciones en formato XLSX
+- **Gráficos** — distribución de gastos por categoría y comparativa mensual
+- **Lista de deseos** — productos por comprar, con link, prioridad y moneda
+- **Fondo de emergencia** — meta de ahorro y progreso en el dashboard
+- **Exportar a Excel** — reporte mensual con hojas de resumen, ingresos y gastos (montos en su moneda original)
 - **Papelera** — recuperar o eliminar permanentemente transacciones borradas
 
 ## Stack
 
-- **Framework**: [Next.js](https://nextjs.org) 16 + App Router + Turbopack
-- **Base de datos**: PostgreSQL via [Prisma](https://prisma.io) ORM
+- **Framework**: [Next.js](https://nextjs.org) 16 + App Router
+- **Base de datos**: PostgreSQL + [Prisma](https://prisma.io) 7
 - **Autenticación**: [Auth.js](https://authjs.dev) v5 (credentials, bcrypt, JWT)
 - **Estilos**: Tailwind CSS 4
 - **Íconos**: [reicon-react](https://www.npmjs.com/package/reicon-react)
 - **Tabla interactiva**: [@tanstack/react-table](https://tanstack.com/table)
 - **Date picker**: [react-datepicker](https://reactdatepicker.com)
-- **Gráficos**: [recharts](https://recharts.org)
+- **Excel**: [ExcelJS](https://github.com/exceljs/exceljs) + Sharp (gráficos embebidos)
 
 ## Requisitos
 
 - Node.js 20+
 - Docker Desktop (para desarrollo local)
-- Cuenta en [Supabase](https://supabase.com) (para producción)
+- Cuenta en [Supabase](https://supabase.com) (producción)
 
 ## Desarrollo local
 
 ```bash
 # 1. Clonar
-git clone https://github.com/tu-usuario/personal-finance-manager.git
+git clone https://github.com/AnthonyAndino/personal-finance-manager.git
 cd personal-finance-manager
 
 # 2. Instalar dependencias
@@ -53,42 +59,52 @@ npx prisma db seed
 npm run dev
 ```
 
+Abre [http://localhost:3000](http://localhost:3000).
+
 ### Usuario de prueba
 
 | Email | Contraseña |
 |-------|-----------|
 | demo@test.com | demo123 |
 
-> Demo: 108 transacciones de ejemplo y 6 artículos en lista de deseos.
+> Incluye transacciones de ejemplo y artículos en la lista de deseos.
 
-## Deploy
+## Deploy (Vercel + Supabase)
+
+1. Conecta el repositorio en [Vercel](https://vercel.com)
+2. Crea la base de datos en [Supabase](https://supabase.com)
+3. Agrega estas variables de entorno en Vercel:
+   - `DATABASE_URL` — connection string de Supabase (pooler)
+   - `AUTH_SECRET` — genera uno con:
+     ```bash
+     node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+     ```
+4. Al hacer deploy, las migraciones se aplican automáticamente (`vercel-build` ejecuta `prisma migrate deploy` antes del build)
+
+Para migrar manualmente contra producción:
 
 ```bash
-# Construir para producción
-npm run build
+npx prisma migrate deploy
 ```
 
-### Vercel + Supabase
+## Scripts útiles
 
-1. Crea un proyecto en [Vercel](https://vercel.com) conectando el repositorio
-2. Crea un proyecto en [Supabase](https://supabase.com)
-3. En Vercel, agrega estas variables de entorno:
-   - `DATABASE_URL` — connection string de Supabase
-   - `AUTH_SECRET` — generado con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
-4. Corre migraciones contra la DB de producción:
-   ```bash
-   npx prisma migrate deploy
-   npx prisma db seed
-   ```
+| Comando | Descripción |
+|---------|-------------|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de producción |
+| `npm run db:migrate` | Nueva migración (desarrollo) |
+| `npm run db:seed` | Datos de prueba |
+| `npm run db:studio` | Prisma Studio |
 
 ## Seguridad
 
 - Autenticación con bcrypt + JWT
-- Rate limiting en login (5 intentos/15min) y exportación (30/min)
+- Rate limiting en login (5 intentos / 15 min) y exportación (30 / min)
 - CSP, X-Frame-Options, X-Content-Type-Options
-- Soft delete: las transacciones se marcan como eliminadas, no se borran
-- Sin secreto en el código fuente
+- Soft delete: las transacciones se marcan como eliminadas, no se borran de inmediato
+- Sin secretos en el código fuente
 
 ## Licencia
 
-MIT
+Este proyecto está bajo la licencia MIT. Ver el archivo [LICENSE](LICENSE) para más detalles.
