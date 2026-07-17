@@ -1,19 +1,107 @@
 "use client"
 
-import { useActionState, useState, useEffect } from "react"
+import { useActionState, useState, useEffect, useRef } from "react"
 import { createTransaction } from "@/lib/actions/transactions"
 import { listUnpurchasedWishlistItems } from "@/lib/actions/wishlist"
 import DatePicker from "react-datepicker"
 import "react-datepicker/dist/react-datepicker.css"
-import { Calendar } from "reicon-react"
+import { Calendar, ChevronLeft, ChevronRight, ChevronDown } from "reicon-react"
 
 type WishlistItem = { id: string; name: string; estimatedPrice: number | null }
 
-export function TransactionForm() {
+const dayNamesMap: { [key: string]: string } = {
+  Su: "Do",
+  Mo: "Lu",
+  Tu: "Ma",
+  We: "Mi",
+  Th: "Ju",
+  Fr: "Vi",
+  Sa: "Sá"
+}
+
+function CustomSelect({
+  value,
+  options,
+  onChange,
+  className = "",
+  variant = "default",
+  fullWidth = false,
+}: {
+  value: number | string
+  options: { value: number | string; label: string }[]
+  onChange: (value: any) => void
+  className?: string
+  variant?: "default" | "ghost"
+  fullWidth?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    if (isOpen) document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [isOpen])
+
+  const selectedOption = options.find((o) => o.value === value)
+
+  const btnClasses = variant === "ghost"
+      ? `bg-transparent hover:bg-slate-100/60 active:bg-slate-100 text-slate-800 font-extrabold text-sm rounded-xl px-2.5 py-1.5 outline-none transition-all cursor-pointer flex items-center gap-1 justify-center ${className}`
+      : `bg-slate-50 hover:bg-slate-100/80 active:bg-slate-100 text-slate-800 font-extrabold text-xs rounded-xl border border-slate-200/80 px-3 py-2 outline-none focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10 transition-all cursor-pointer flex items-center gap-1.5 ${fullWidth ? "w-full" : "min-w-[72px]"} justify-between ${className}`
+
+  return (
+    <div ref={ref} className={fullWidth ? "relative w-full" : "relative inline-block text-left"}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={btnClasses}
+      >
+        <span>{selectedOption?.label}</span>
+        <ChevronDown size={variant === "ghost" ? 10 : 12} className={`text-slate-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className={`absolute ${variant === "ghost" ? "left-1/2 -translate-x-1/2" : "left-0"} mt-1 z-[60] ${fullWidth ? "w-full" : "min-w-[180px]"} bg-white border border-slate-200/80 rounded-2xl shadow-xl p-1.5 max-h-60 overflow-y-auto scrollbar-thin flex flex-col gap-0.5`}>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                onChange(opt.value)
+                setIsOpen(false)
+              }}
+              className={`w-full text-left px-3 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                opt.value === value
+                  ? "bg-[#2563EB] text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TransactionForm({ defaultRate = 25 }: { defaultRate?: number }) {
   const [state, formAction, pending] = useActionState(createTransaction, null)
   const [type, setType] = useState("income")
+  const [txCurrency, setTxCurrency] = useState("L")
   const [wishlistItems, setWishlistItems] = useState<WishlistItem[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [selectedWishlist, setSelectedWishlist] = useState("")
+
+  useEffect(() => {
+    if (state?.success) {
+      setTimeout(() => window.location.reload(), 1200)
+    }
+  }, [state?.success])
 
   useEffect(() => {
     listUnpurchasedWishlistItems().then(setWishlistItems)
@@ -28,7 +116,7 @@ export function TransactionForm() {
         <h2 className="text-xl font-black text-slate-900">
           Nueva Transacción
         </h2>
-        <p className="text-xs text-slate-400 font-medium">Registra los ingresos o gastos del vehículo.</p>
+        <p className="text-xs text-slate-400 font-medium">Registra tus ingresos o gastos.</p>
       </div>
 
       {state?.error && (
@@ -72,11 +160,40 @@ export function TransactionForm() {
         </label>
       </div>
 
+      {/* Moneda */}
+      <div className="flex flex-col gap-2">
+        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Moneda</label>
+        <div className="flex gap-4">
+          <label
+            onClick={() => setTxCurrency("L")}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-2xl border-2 p-4 cursor-pointer transition-all ${
+              txCurrency === "L"
+                ? "border-blue-500 bg-blue-50/50"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            <input type="radio" name="currency" value="L" defaultChecked className="hidden" />
+            <span className={`text-sm font-black ${txCurrency === "L" ? "text-blue-700" : "text-slate-600"}`}>Lempiras (L)</span>
+          </label>
+          <label
+            onClick={() => setTxCurrency("$")}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-2xl border-2 p-4 cursor-pointer transition-all ${
+              txCurrency === "$"
+                ? "border-green-500 bg-green-50/50"
+                : "border-slate-200 bg-slate-50"
+            }`}
+          >
+            <input type="radio" name="currency" value="$" className="hidden" />
+            <span className={`text-sm font-black ${txCurrency === "$" ? "text-green-700" : "text-slate-600"}`}>Dólares ($)</span>
+          </label>
+        </div>
+      </div>
+
       {/* Monto */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Monto ($)</label>
+        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Monto ({txCurrency})</label>
         <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-base">$</span>
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-base">{txCurrency}</span>
           <input
             name="amount"
             type="number"
@@ -112,23 +229,44 @@ export function TransactionForm() {
         />
       </div>
 
+      {/* Tasa de cambio (solo dólares) */}
+      {txCurrency === "$" && (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Tasa de cambio (L por $)</label>
+          <input
+            name="exchangeRate"
+            type="number"
+            step="0.01"
+            min="0.01"
+            required
+            placeholder="Ej. 25.00"
+            defaultValue={defaultRate.toFixed(2)}
+            className="w-full bg-white text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 py-3.5 px-4 text-sm outline-none transition-all duration-200 focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
+          />
+        </div>
+      )}
+
       {/* Vincular a deseo (solo gastos) */}
       {type === "expense" && wishlistItems.length > 0 && (
         <div className="flex flex-col gap-2">
           <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">
             Vincular a deseo
           </label>
-          <select
-            name="wishlistItemId"
-            className="bg-white text-slate-900 rounded-xl border border-slate-200 py-3.5 px-4 text-sm outline-none transition-all duration-200 focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
-          >
-            <option value="">Sin vínculo</option>
-            {wishlistItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}{item.estimatedPrice ? ` ($${item.estimatedPrice})` : ""}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <CustomSelect
+              value={selectedWishlist}
+              options={[
+                { value: "", label: "Sin vínculo" },
+                ...wishlistItems.map((item) => ({
+                  value: item.id,
+                  label: `${item.name}${item.estimatedPrice ? ` (L${item.estimatedPrice})` : ""}`,
+                })),
+              ]}
+              onChange={(v) => setSelectedWishlist(v as string)}
+              fullWidth
+            />
+            <input type="hidden" name="wishlistItemId" value={selectedWishlist} />
+          </div>
         </div>
       )}
 
@@ -142,10 +280,66 @@ export function TransactionForm() {
               if (date) setSelectedDate(date)
             }}
             dateFormat="dd/MM/yyyy"
-            className="w-full bg-white text-slate-900 rounded-xl border border-slate-200 py-3.5 px-4 text-sm outline-none transition-all duration-200 focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10"
-            calendarClassName="!border !border-slate-200 !rounded-2xl !shadow-lg !bg-white !p-2"
+            className="w-full bg-white text-slate-900 rounded-xl border border-slate-200 py-3.5 px-4 text-sm outline-none transition-all duration-200 focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10 cursor-pointer"
+            calendarClassName="!border !border-slate-100 !rounded-3xl !shadow-[0_25px_60px_-15px_rgba(15,23,42,0.12)] !bg-white !p-4"
             wrapperClassName="w-full"
             popperClassName="!z-50"
+            fixedHeight
+            formatWeekDay={(nameOfDay) => dayNamesMap[nameOfDay.substring(0, 2)] || nameOfDay}
+            renderCustomHeader={({
+              date,
+              changeMonth,
+              decreaseMonth,
+              increaseMonth,
+              prevMonthButtonDisabled,
+              nextMonthButtonDisabled,
+            }) => {
+              const months = [
+                "Enero",
+                "Febrero",
+                "Marzo",
+                "Abril",
+                "Mayo",
+                "Junio",
+                "Julio",
+                "Agosto",
+                "Septiembre",
+                "Octubre",
+                "Noviembre",
+                "Diciembre",
+              ]
+
+              const monthOptions = months.map((m, idx) => ({ value: idx, label: m }))
+
+              return (
+                <div className="flex items-center justify-between px-2 py-1 bg-white mb-3">
+                  <button
+                    type="button"
+                    onClick={decreaseMonth}
+                    disabled={prevMonthButtonDisabled}
+                    className="w-8 h-8 rounded-xl hover:bg-slate-100/80 active:scale-95 transition-all text-slate-600 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex items-center justify-center border border-transparent"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <CustomSelect
+                    value={date.getMonth()}
+                    options={monthOptions}
+                    onChange={changeMonth}
+                    variant="ghost"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={increaseMonth}
+                    disabled={nextMonthButtonDisabled}
+                    className="w-8 h-8 rounded-xl hover:bg-slate-100/80 active:scale-95 transition-all text-slate-600 disabled:opacity-30 disabled:pointer-events-none cursor-pointer flex items-center justify-center border border-transparent"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )
+            }}
           />
           <Calendar size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input type="hidden" name="date" value={selectedDate.toISOString().split("T")[0]} />

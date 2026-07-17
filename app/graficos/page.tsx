@@ -3,6 +3,15 @@ import { redirect } from "next/navigation"
 import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { ExportButton } from "@/components/export-button"
+import { CurrencyToggle } from "@/components/currency-toggle"
+import { getDefaultRate } from "@/lib/currency"
+
+function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
+  if (txCurrency === preferred) return amount
+  if (preferred === "L") return amount * (rate ?? defaultRate)
+  if (preferred === "$") return amount / (rate ?? defaultRate)
+  return amount
+}
 
 function getMonthRange(year: number, month: number) {
   const start = new Date(year, month, 1)
@@ -10,8 +19,8 @@ function getMonthRange(year: number, month: number) {
   return { start, end }
 }
 
-function formatCurrency(n: number) {
-  return "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2 })
+function formatCurrency(n: number, c: string = "$") {
+  return c + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -25,6 +34,13 @@ export default async function GraficosPage() {
   const currentMonth = now.getMonth()
   const currentYear = now.getFullYear()
 
+  const userPref = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { currency: true },
+  })
+  const preferredCurrency = userPref?.currency ?? "L"
+  const defaultRate = await getDefaultRate()
+
   // ── 1. Monthly Evolution (last 6 months) ──
   const monthlyData: { label: string; income: number; expense: number }[] = []
   for (let i = 5; i >= 0; i--) {
@@ -33,14 +49,18 @@ export default async function GraficosPage() {
     if (m < 0) { m += 12; y-- }
     const { start, end } = getMonthRange(y, m)
 
-    const totals = await prisma.transaction.groupBy({
-      by: ["type"],
+    const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      _sum: { amount: true },
+      select: { type: true, amount: true, currency: true, exchangeRate: true },
     })
 
-    const income = totals.find((t) => t.type === "income")?._sum.amount?.toNumber() ?? 0
-    const expense = totals.find((t) => t.type === "expense")?._sum.amount?.toNumber() ?? 0
+    let income = 0
+    let expense = 0
+    totals.forEach((t) => {
+      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
+      if (t.type === "income") income += monto
+      else expense += monto
+    })
 
     monthlyData.push({
       label: MONTHS_SHORT[m],
@@ -62,7 +82,8 @@ export default async function GraficosPage() {
   monthExpenses.forEach((t) => {
     const cat = t.category.trim().toLowerCase()
     const catF = cat.charAt(0).toUpperCase() + cat.slice(1)
-    gastosPorCategoria[catF] = (gastosPorCategoria[catF] || 0) + t.amount.toNumber()
+    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
+    gastosPorCategoria[catF] = (gastosPorCategoria[catF] || 0) + monto
   })
 
   const categorias = Object.entries(gastosPorCategoria)
@@ -80,14 +101,18 @@ export default async function GraficosPage() {
     if (m < 0) { m += 12; y-- }
     const { start, end } = getMonthRange(y, m)
 
-    const totals = await prisma.transaction.groupBy({
-      by: ["type"],
+    const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      _sum: { amount: true },
+      select: { type: true, amount: true, currency: true, exchangeRate: true },
     })
 
-    const income = totals.find((t) => t.type === "income")?._sum.amount?.toNumber() ?? 0
-    const expense = totals.find((t) => t.type === "expense")?._sum.amount?.toNumber() ?? 0
+    let income = 0
+    let expense = 0
+    totals.forEach((t) => {
+      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
+      if (t.type === "income") income += monto
+      else expense += monto
+    })
     accBalance += income - expense
 
     balanceData.push({
@@ -107,7 +132,7 @@ export default async function GraficosPage() {
 
   return (
     <div className="flex flex-1 flex-col w-full min-h-screen lg:pl-64 pb-16 lg:pb-0">
-      <Sidebar />
+      <Sidebar userName={session.user.name} userEmail={session.user.email} />
 
       <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
@@ -116,10 +141,11 @@ export default async function GraficosPage() {
             <span>Control<span className="text-[#2563EB] font-black">Gastos</span></span>
           </a>
           <div className="flex items-center gap-3">
+            <CurrencyToggle defaultCurrency={preferredCurrency} />
             <ExportButton month={mesAno} label="Exportar" />
             <div className="hidden sm:flex flex-col items-end text-right">
               <span className="text-sm font-bold text-slate-800">{session.user.name}</span>
-              <span className="text-xs text-slate-400 font-medium">Panel Conductor</span>
+              <span className="text-xs text-slate-400 font-medium">Panel de Control</span>
             </div>
           </div>
         </div>
@@ -181,10 +207,10 @@ export default async function GraficosPage() {
                     <rect x={xBase} y={yIncome} width={barW} height={hIncome} rx="4" fill="#10b981" className="cursor-pointer" />
                     <rect x={xBase + barW + gap} y={yExpense} width={barW} height={hExpense} rx="4" fill="#ef4444" className="cursor-pointer" />
                     <text x={xBase + barW / 2} y={yIncome - 6} textAnchor="middle" fill="#0f172a" className="text-[9px] font-bold">
-                      {d.income > 0 ? `$${Math.round(d.income)}` : ""}
+                      {d.income > 0 ? `${preferredCurrency}${Math.round(d.income)}` : ""}
                     </text>
                     <text x={xBase + barW + gap + barW / 2} y={yExpense - 6} textAnchor="middle" fill="#ef4444" className="text-[9px] font-bold">
-                      {d.expense > 0 ? `$${Math.round(d.expense)}` : ""}
+                      {d.expense > 0 ? `${preferredCurrency}${Math.round(d.expense)}` : ""}
                     </text>
                     <text x={xBase + barW / 2 + gap / 2} y="222" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{d.label}</text>
                   </g>
@@ -259,7 +285,7 @@ export default async function GraficosPage() {
                         <span className="text-xs text-slate-400 font-medium tabular-nums">
                           {Math.round((cat.value / totalGastos) * 100)}%
                         </span>
-                        <span className="font-extrabold text-slate-900 tabular-nums">{formatCurrency(cat.value)}</span>
+                        <span className="font-extrabold text-slate-900 tabular-nums">{formatCurrency(cat.value, preferredCurrency)}</span>
                       </div>
                     </div>
                   ))}
@@ -301,7 +327,7 @@ export default async function GraficosPage() {
                         <g key={i}>
                           <circle cx={p.x} cy={p.y} r="5" fill="#2563EB" stroke="white" strokeWidth="2" className="cursor-pointer" />
                           <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#0f172a" className="text-[9px] font-bold">
-                            {formatCurrency(Math.round(p.val))}
+                            {formatCurrency(Math.round(p.val), preferredCurrency)}
                           </text>
                           <text x={p.x} y="200" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{p.label}</text>
                         </g>

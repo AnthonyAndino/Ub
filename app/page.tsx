@@ -3,37 +3,58 @@ import { redirect } from "next/navigation"
 import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { DashboardCards, EmptyCategory } from "@/components/dashboard-cards"
+import { EmergencyFundCard } from "@/components/emergency-fund-card"
+import { getDefaultRate } from "@/lib/currency"
 import { ExportButton } from "@/components/export-button"
+import { CurrencyToggle } from "@/components/currency-toggle"
+
+function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
+  if (txCurrency === preferred) return amount
+  if (preferred === "L") return amount * (rate ?? defaultRate)
+  if (preferred === "$") return amount / (rate ?? defaultRate)
+  return amount
+}
 
 export default async function Home() {
   const session = await auth()
   if (!session?.user?.id) redirect("/login")
 
   const userId = session.user.id
+  const defaultRate = await getDefaultRate()
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { currency: true },
+  })
+  const currency = user?.currency ?? "L"
+
   const monthStart = new Date()
   monthStart.setDate(1)
   monthStart.setHours(0, 0, 0, 0)
   const monthEnd = new Date(monthStart)
   monthEnd.setMonth(monthEnd.getMonth() + 1)
 
-  const totals = await prisma.transaction.groupBy({
-    by: ["type"],
-    where: { userId, deletedAt: null, date: { gte: monthStart, lt: monthEnd } },
-    _sum: { amount: true },
-  })
-
-  const ingresos = totals.find((t) => t.type === "income")?._sum.amount?.toNumber() ?? 0
-  const gastos = totals.find((t) => t.type === "expense")?._sum.amount?.toNumber() ?? 0
-  const balance = ingresos - gastos
-  const retorno = gastos > 0 ? ingresos / gastos : ingresos > 0 ? 1 : 0
-
-  const metasLogradas = await prisma.wishlistItem.count({
-    where: { userId, purchased: true },
-  })
-
   const transaccionesMes = await prisma.transaction.findMany({
     where: { userId, deletedAt: null, date: { gte: monthStart, lt: monthEnd } },
     orderBy: { date: "asc" },
+  })
+
+  let ingresos = 0
+  let gastos = 0
+  let ingresosL = 0
+  let gastosL = 0
+  transaccionesMes.forEach((t) => {
+    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
+    if (t.type === "income") ingresos += monto
+    else gastos += monto
+    const enL = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, "L", defaultRate)
+    if (t.type === "income") ingresosL += enL
+    else gastosL += enL
+  })
+  const balance = ingresos - gastos
+  const retorno = gastosL > 0 ? ingresosL / gastosL : ingresosL > 0 ? 1 : 0
+
+  const metasLogradas = await prisma.wishlistItem.count({
+    where: { userId, purchased: true },
   })
 
   const semanasData = [
@@ -47,7 +68,7 @@ export default async function Home() {
     const dia = new Date(t.date).getDate()
     let indiceSemana = Math.floor((dia - 1) / 7)
     if (indiceSemana > 3) indiceSemana = 3
-    const monto = t.amount.toNumber()
+    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
     if (t.type === "income") {
       semanasData[indiceSemana].income += monto
     } else {
@@ -63,7 +84,8 @@ export default async function Home() {
     .forEach((t) => {
       const cat = t.category.trim().toLowerCase()
       const catFormatted = cat.charAt(0).toUpperCase() + cat.slice(1)
-      gastosPorCategoria[catFormatted] = (gastosPorCategoria[catFormatted] || 0) + t.amount.toNumber()
+      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
+      gastosPorCategoria[catFormatted] = (gastosPorCategoria[catFormatted] || 0) + monto
     })
 
   const categoriasGastos = Object.entries(gastosPorCategoria)
@@ -78,7 +100,7 @@ export default async function Home() {
 
   return (
     <div className="flex flex-1 flex-col w-full min-h-screen lg:pl-64 pb-16 lg:pb-0">
-      <Sidebar />
+      <Sidebar userName={session.user?.name} userEmail={session.user?.email} />
 
       {/* Navbar Superior */}
       <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-30">
@@ -88,6 +110,12 @@ export default async function Home() {
             <span>Control<span className="text-[#2563EB] font-black">Gastos</span></span>
           </div>
           <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-500 tracking-tight">
+              <span className="text-emerald-600 font-black">$1</span>
+              <span className="text-slate-300">/</span>
+              <span className="text-slate-600">L{defaultRate.toFixed(2)}</span>
+            </div>
+            <CurrencyToggle defaultCurrency={currency} />
             <ExportButton month={mesAnoUrl} />
           </div>
         </div>
@@ -118,7 +146,7 @@ export default async function Home() {
             <div className="flex flex-col gap-1 p-4 md:p-6 border-r border-slate-800">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ingreso Mensual</span>
               <span className="text-3xl md:text-4xl font-black text-white">
-                <span className="text-[#2563EB]">$</span>{ingresos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                <span className="text-[#2563EB]">{currency}</span>{ingresos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -126,7 +154,7 @@ export default async function Home() {
             <div className="flex flex-col gap-1 p-4 md:p-6 border-r border-slate-800">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Gasto Mensual</span>
               <span className="text-3xl md:text-4xl font-black text-white">
-                ${gastos.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                {currency}{gastos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
@@ -149,7 +177,7 @@ export default async function Home() {
         </div>
 
         {/* Rejilla de Totales Rápidos */}
-        <DashboardCards ingresos={ingresos} gastos={gastos} balance={balance} />
+        <DashboardCards ingresos={ingresos} gastos={gastos} balance={balance} currency={currency} />
 
         {/* Sección de Gráficos SVG */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -191,10 +219,10 @@ export default async function Home() {
                       <rect x={xBase} y={yIncome} width="32" height={hIncome} rx="6" fill="#10b981" className="transition-all duration-300 hover:fill-green-600 cursor-pointer" />
                       <rect x={xBase + 38} y={yExpense} width="32" height={hExpense} rx="6" fill="#ef4444" className="transition-all duration-300 hover:fill-red-600 cursor-pointer" />
                       {d.income > 0 && (
-                        <text x={xBase + 16} y={yIncome - 6} textAnchor="middle" fill="#0f172a" className="text-[10px] font-black">${Math.round(d.income)}</text>
+                        <text x={xBase + 16} y={yIncome - 6} textAnchor="middle" fill="#0f172a" className="text-[10px] font-black">{currency}{Math.round(d.income)}</text>
                       )}
                       {d.expense > 0 && (
-                        <text x={xBase + 54} y={yExpense - 6} textAnchor="middle" fill="#ef4444" className="text-[10px] font-black">${Math.round(d.expense)}</text>
+                        <text x={xBase + 54} y={yExpense - 6} textAnchor="middle" fill="#ef4444" className="text-[10px] font-black">{currency}{Math.round(d.expense)}</text>
                       )}
                       <text x={xBase + 35} y="202" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{d.nombre}</text>
                     </g>
@@ -228,7 +256,7 @@ export default async function Home() {
                     <div key={i} className="flex flex-col gap-2">
                       <div className="flex justify-between items-center text-sm">
                         <span className="font-bold text-slate-700">{cat.name}</span>
-                        <span className="font-extrabold text-slate-900">${cat.value.toFixed(2)}</span>
+                        <span className="font-extrabold text-slate-900">{currency}{cat.value.toFixed(2)}</span>
                       </div>
                       <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full bg-gradient-to-r ${coloresBarra[i % coloresBarra.length]} transition-all duration-500`} style={{ width: `${porcentaje}%` }}></div>
@@ -240,6 +268,8 @@ export default async function Home() {
             )}
           </div>
         </div>
+
+        <EmergencyFundCard />
       </main>
     </div>
   )

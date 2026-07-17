@@ -10,6 +10,8 @@ model Transaction {
   id             String       @id @default(cuid())
   type           String       @default("income")
   amount         Decimal      @db.Decimal(10, 2)
+  currency       String       @default("L")
+  exchangeRate   Decimal?     @db.Decimal(10, 4)
   category       String
   description    String?
   date           DateTime
@@ -22,13 +24,15 @@ model Transaction {
 }
 
 model User {
-  id             String          @id @default(cuid())
-  name           String?
-  email          String          @unique
-  password       String
-  transactions   Transaction[]
-  wishlistItems  WishlistItem[]
-  createdAt      DateTime        @default(now())
+  id                String          @id @default(cuid())
+  name              String?
+  email             String          @unique
+  password          String
+  currency          String          @default("L")
+  emergencyFundGoal Decimal?        @map("emergency_fund_goal")
+  transactions      Transaction[]
+  wishlistItems     WishlistItem[]
+  createdAt         DateTime        @default(now())
 }
 
 model WishlistItem {
@@ -37,6 +41,8 @@ model WishlistItem {
   estimatedPrice Decimal?      @db.Decimal(10, 2)
   priority       String        @default("media")
   purchased      Boolean       @default(false)
+  currency       String        @default("L")
+  exchangeRate   Decimal?      @db.Decimal(10, 4)
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   transactions   Transaction[]

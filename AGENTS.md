@@ -2,7 +2,7 @@
 
 ## Contexto
 
-App para que una familia lleve las cuentas de su carro de Uber. 4 usuarios
+App para que una familia lleve el control de sus ingresos y gastos personales. 4 usuarios
 reales (uber, angeles, ethel, renan @cuentas.com) + 1 demo (demo@test.com).
 Usuarios sin experiencia con tecnología: UI simple, botones grandes, texto claro.
 

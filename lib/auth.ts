@@ -13,6 +13,30 @@ const loginSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  callbacks: {
+    async jwt({ token, user, trigger }) {
+      if (user) {
+        token.id = user.id
+      }
+      if (user || trigger === "update") {
+        if (token.id) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { currency: true },
+          })
+          token.currency = dbUser?.currency ?? "L"
+        }
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string
+        session.user.currency = (token.currency as string) ?? "L"
+      }
+      return session
+    },
+  },
   providers: [
     Credentials({
       credentials: {

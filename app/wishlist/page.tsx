@@ -2,15 +2,19 @@ import { auth } from "@/lib/auth.config"
 import { redirect } from "next/navigation"
 import { WishlistForm } from "@/components/wishlist-form"
 import { WishlistList } from "@/components/wishlist-list"
+import { EmergencyFundWishlistCard } from "@/components/emergency-fund-card"
 import { Sidebar } from "@/components/sidebar"
+import { getDefaultRate } from "@/lib/currency"
 
 export default async function WishlistPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
 
+  const defaultRate = await getDefaultRate()
+
   return (
     <div className="flex flex-1 flex-col w-full min-h-screen lg:pl-64 pb-16 lg:pb-0">
-      <Sidebar />
+      <Sidebar userName={session.user?.name} userEmail={session.user?.email} />
 
       {/* Navbar Superior */}
       <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-30">
@@ -22,7 +26,7 @@ export default async function WishlistPage() {
           <div className="flex items-center gap-4">
             <div className="hidden sm:flex flex-col items-end text-right">
               <span className="text-sm font-bold text-slate-800">{session.user.name ?? session.user.email}</span>
-              <span className="text-xs text-slate-400 font-medium">Panel Conductor</span>
+              <span className="text-xs text-slate-400 font-medium">Panel de Control</span>
             </div>
           </div>
         </div>
@@ -40,8 +44,9 @@ export default async function WishlistPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          <div className="lg:col-span-5">
-            <WishlistForm />
+          <div className="lg:col-span-5 flex flex-col gap-8">
+            <WishlistForm defaultRate={defaultRate} />
+            <EmergencyFundWishlistCard />
           </div>
           <div className="lg:col-span-7">
             <WishlistList />

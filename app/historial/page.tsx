@@ -13,15 +13,18 @@ import {
   type SortingState,
 } from "@tanstack/react-table"
 import { listAllTransactions, deleteTransaction } from "@/lib/actions/transactions"
+import { useSession } from "next-auth/react"
 import { Sidebar } from "@/components/sidebar"
 import MonthPicker from "@/components/month-picker"
 import ConfirmDialog from "@/components/confirm-dialog"
+
 import { Trash, ChevronLeft, ChevronRight, ChevronExpandY, ArrowUp, ArrowDown } from "reicon-react"
 
 type Tx = Awaited<ReturnType<typeof listAllTransactions>>[number]
 
 export default function HistorialPage() {
   const router = useRouter()
+  const { data: session } = useSession()
   const [transactions, setTransactions] = useState<Tx[]>([])
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState("all")
@@ -29,6 +32,7 @@ export default function HistorialPage() {
   const [search, setSearch] = useState("")
   const [sorting, setSorting] = useState<SortingState>([{ id: "date", desc: true }])
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const prefCurrency = session?.user?.currency ?? "L"
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,12 +87,32 @@ export default function HistorialPage() {
       header: "Monto",
       cell: (info) => {
         const row = info.row.original
+        const amount = info.getValue()
+        const sign = row.type === "income" ? "+" : "-"
+        const showEquivalent = row.currency !== prefCurrency && row.exchangeRate != null
+
+        let equivalent: number | null = null
+        if (showEquivalent) {
+          if (row.currency === "L" && prefCurrency === "$") {
+            equivalent = amount / row.exchangeRate!
+          } else if (row.currency === "$" && prefCurrency === "L") {
+            equivalent = amount * row.exchangeRate!
+          }
+        }
+
         return (
-          <span className={`font-extrabold tabular-nums whitespace-nowrap ${
-            row.type === "income" ? "text-green-600" : "text-red-500"
-          }`}>
-            {row.type === "income" ? "+" : "-"}${info.getValue().toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-          </span>
+          <div className="flex flex-col items-end">
+            <span className={`font-extrabold tabular-nums whitespace-nowrap ${
+              row.type === "income" ? "text-green-600" : "text-red-500"
+            }`}>
+              {sign}{row.currency}{amount.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {equivalent !== null && (
+              <span className="text-[10px] text-slate-400 font-semibold tabular-nums">
+                ≈ {prefCurrency}{equivalent.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
         )
       },
       sortingFn: "basic",
@@ -132,12 +156,12 @@ export default function HistorialPage() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 15 } },
+    initialState: { pagination: { pageSize: 10 } },
   })
 
   return (
     <div className="flex flex-1 flex-col w-full min-h-screen lg:pl-64 pb-16 lg:pb-0">
-      <Sidebar />
+      <Sidebar userName={session?.user?.name} userEmail={session?.user?.email} />
 
       <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">

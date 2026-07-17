@@ -35,11 +35,11 @@ export default function Modal({ open, onClose, title, children, icon }: ModalPro
         </button>
         <div className="flex flex-col gap-4">
           {icon && (
-            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-100">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-slate-100 mx-auto">
               {icon}
             </div>
           )}
-          <h2 className="text-xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-xl font-black text-slate-900 tracking-tight text-center">
             {title}
           </h2>
           {children}

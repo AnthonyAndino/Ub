@@ -3,14 +3,17 @@ import { redirect } from "next/navigation"
 import { TransactionForm } from "@/components/transaction-form"
 import { RecentTransactions } from "@/components/recent-transactions"
 import { Sidebar } from "@/components/sidebar"
+import { getDefaultRate } from "@/lib/currency"
 
 export default async function TransactionsPage() {
   const session = await auth()
   if (!session?.user) redirect("/login")
 
+  const defaultRate = await getDefaultRate()
+
   return (
     <div className="flex flex-1 flex-col w-full min-h-screen lg:pl-64 pb-16 lg:pb-0">
-      <Sidebar />
+      <Sidebar userName={session.user?.name} userEmail={session.user?.email} />
 
       <header className="border-b border-slate-200/60 bg-white/80 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
@@ -20,7 +23,7 @@ export default async function TransactionsPage() {
           </a>
           <div className="hidden sm:flex flex-col items-end text-right">
             <span className="text-sm font-bold text-slate-800">{session.user.name ?? session.user.email}</span>
-            <span className="text-xs text-slate-400 font-medium">Panel Conductor</span>
+            <span className="text-xs text-slate-400 font-medium">Panel de Control</span>
           </div>
         </div>
       </header>
@@ -37,10 +40,10 @@ export default async function TransactionsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           <div className="lg:col-span-5">
-            <TransactionForm />
+            <TransactionForm defaultRate={defaultRate} />
           </div>
           <div className="lg:col-span-7">
-            <RecentTransactions />
+            <RecentTransactions prefCurrency="L" />
           </div>
         </div>
       </main>

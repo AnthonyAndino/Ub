@@ -12,6 +12,8 @@ const createSchema = z.object({
   description: z.string().optional(),
   date: z.string().min(1, "La fecha es requerida"),
   wishlistItemId: z.string().optional(),
+  currency: z.enum(["$", "L"]).default("L"),
+  exchangeRate: z.string().optional(),
 })
 
 export async function createTransaction(
@@ -28,6 +30,8 @@ export async function createTransaction(
     description: formData.get("description") || undefined,
     date: formData.get("date"),
     wishlistItemId: formData.get("wishlistItemId") || undefined,
+    currency: formData.get("currency") || "L",
+    exchangeRate: formData.get("exchangeRate") || undefined,
   })
 
   if (!parsed.success) {
@@ -43,6 +47,8 @@ export async function createTransaction(
       date: new Date(parsed.data.date),
       userId: session.user.id,
       wishlistItemId: parsed.data.wishlistItemId ?? null,
+      currency: parsed.data.currency,
+      exchangeRate: parsed.data.exchangeRate ? Number(parsed.data.exchangeRate) : null,
     },
   })
 
@@ -58,13 +64,15 @@ export async function listTransactions() {
 
   const data = await prisma.transaction.findMany({
     where: { userId: session.user.id, deletedAt: null },
-    orderBy: { date: "desc" },
+    orderBy: { createdAt: "desc" },
     take: 5,
   })
 
   return data.map((t) => ({
     ...t,
     amount: t.amount.toNumber(),
+    currency: t.currency,
+    exchangeRate: t.exchangeRate?.toNumber() ?? null,
   }))
 }
 
@@ -96,7 +104,7 @@ export async function listAllTransactions(filters: {
 
   const data = await prisma.transaction.findMany({
     where: where as any,
-    orderBy: { date: "desc" },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     include: { wishlistItem: { select: { id: true, name: true } } },
   })
 
@@ -108,6 +116,8 @@ export async function listAllTransactions(filters: {
     description: t.description,
     date: t.date.toISOString(),
     wishlistItem: t.wishlistItem,
+    currency: t.currency,
+    exchangeRate: t.exchangeRate?.toNumber() ?? null,
     createdAt: t.createdAt.toISOString(),
   }))
 }
@@ -183,6 +193,8 @@ export async function listTrashedTransactions() {
     description: t.description,
     date: t.date.toISOString(),
     wishlistItem: t.wishlistItem,
+    currency: t.currency,
+    exchangeRate: t.exchangeRate?.toNumber() ?? null,
     deletedAt: t.deletedAt!.toISOString(),
     createdAt: t.createdAt.toISOString(),
   }))

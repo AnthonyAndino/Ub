@@ -2,8 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
-import { useSession } from "next-auth/react"
-import { Home, CreditCard, Star, Download, Logout, WalletMoney, ChartBar, Clock, Trash2 } from "reicon-react"
+import { Home, CreditCard, Star, Logout, WalletMoney, ChartBar, Clock, Trash2 } from "reicon-react"
 
 const links = [
   { href: "/", label: "Inicio", icon: Home },
@@ -13,10 +12,14 @@ const links = [
   { href: "/wishlist", label: "Deseos", icon: Star },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  userName?: string | null
+  userEmail?: string | null
+}
+
+export function Sidebar({ userName, userEmail }: SidebarProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const { data: session } = useSession()
 
   const handleLogout = async () => {
     await signOut({ redirect: false })
@@ -39,14 +42,14 @@ export function Sidebar() {
         <div className="mx-3 mt-4 mb-2 p-3 rounded-2xl bg-gradient-to-br from-[#2563EB]/5 to-[#2563EB]/10 border border-[#2563EB]/10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#2563EB] flex items-center justify-center text-white text-sm font-black shrink-0">
-              {(session?.user?.name ?? session?.user?.email ?? "U").charAt(0).toUpperCase()}
+              {(userName ?? userEmail ?? "U").charAt(0).toUpperCase()}
             </div>
             <div className="flex flex-col min-w-0">
               <p className="text-sm font-bold text-slate-900 truncate leading-tight">
-                {session?.user?.name ?? "Usuario"}
+                {userName ?? "Usuario"}
               </p>
               <p className="text-[11px] text-slate-500 font-medium truncate leading-tight">
-                {session?.user?.email ?? ""}
+                {userEmail ?? ""}
               </p>
             </div>
           </div>
@@ -130,6 +133,7 @@ export function Sidebar() {
             <Trash2 size={20} weight={pathname === "/papelera" ? "Filled" : "Outline"} />
             Papelera
           </a>
+
           <button
             onClick={handleLogout}
             className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl text-[10px] font-bold text-slate-400 hover:text-red-500 transition-all"

@@ -2,25 +2,37 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { listTransactions, deleteTransaction } from "@/lib/actions/transactions"
+import { fetchDefaultRate } from "@/lib/actions/currency"
 import { Trash } from "reicon-react"
+import ConfirmDialog from "@/components/confirm-dialog"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
-export function RecentTransactions() {
+function convertAmount(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
+  if (txCurrency === preferred) return amount
+  if (preferred === "L") return amount * (rate ?? defaultRate)
+  if (preferred === "$") return amount / (rate ?? defaultRate)
+  return amount
+}
+
+export function RecentTransactions({ prefCurrency = "L" }: { prefCurrency?: string }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [defaultRate, setDefaultRate] = useState(25)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [txToDelete, setTxToDelete] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await listTransactions()
+    const [data, rate] = await Promise.all([listTransactions(), fetchDefaultRate()])
     setTransactions(data)
+    setDefaultRate(rate)
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
   const handleDelete = async (id: string) => {
-    if (!confirm("¿Eliminar esta transacción?")) return
     await deleteTransaction(id)
     setTransactions((prev) => prev.filter((t) => t.id !== id))
   }
@@ -70,16 +82,33 @@ export function RecentTransactions() {
               </div>
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <span className={`text-sm font-black ${t.type === "income" ? "text-green-600" : "text-red-500"}`}>
-                {t.type === "income" ? "+" : "-"}${t.amount.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-              </span>
-              <button onClick={() => handleDelete(t.id)} className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer">
+              <div className="flex flex-col items-end">
+                <span className={`text-sm font-black ${t.type === "income" ? "text-green-600" : "text-red-500"}`}>
+                  {t.type === "income" ? "+" : "-"}{t.currency}{t.amount.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                {t.currency !== prefCurrency && t.exchangeRate != null && (
+                  <span className="text-[10px] text-slate-400 font-semibold">
+                    ≈ {prefCurrency}{convertAmount(t.amount, t.currency, t.exchangeRate, prefCurrency, defaultRate).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                )}
+              </div>
+              <button onClick={() => { setTxToDelete(t.id); setDeleteModalOpen(true) }} className="text-slate-300 hover:text-red-500 transition-colors cursor-pointer">
                 <Trash size={15} />
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        open={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={() => { if (txToDelete) handleDelete(txToDelete); setTxToDelete(null) }}
+        title="Eliminar transacción"
+        message="¿Estás seguro de que deseas eliminar esta transacción?"
+        confirmLabel="Eliminar"
+        variant="danger"
+      />
     </div>
   )
 }

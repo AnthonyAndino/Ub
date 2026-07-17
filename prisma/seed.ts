@@ -32,7 +32,7 @@ async function main() {
   await prisma.wishlistItem.deleteMany({ where: { userId: user.id } })
 
   const now = new Date()
-  const transactions: { date: Date; type: "income" | "expense"; amount: number; category: string; description: string; userId: string }[] = []
+  const transactions: { date: Date; type: "income" | "expense"; amount: number; category: string; description: string; userId: string; currency: string; exchangeRate: number | null }[] = []
 
   for (let m = 0; m < 6; m++) {
     const month = now.getMonth() - m
@@ -50,6 +50,8 @@ async function main() {
         category: randomPick(CATEGORIES_INCOME),
         description: `Viaje #${Math.floor(Math.random() * 9000 + 1000)}`,
         userId: user.id,
+        currency: "L",
+        exchangeRate: null,
       })
     }
 
@@ -66,15 +68,18 @@ async function main() {
         category: cat,
         description: cat === "Gasolina" ? "Tanque lleno" : cat === "Lavado" ? "Lavado completo" : cat === "Comida" ? "Comida del día" : "",
         userId: user.id,
+        currency: "L",
+        exchangeRate: null,
       })
     }
   }
 
-  for (const desc of ["Viaje a la zona", "Viaje al aeropuerto", "Viaje corto"]) {
+  for (const [index, desc] of ["Viaje a la zona", "Viaje al aeropuerto", "Viaje corto"].entries()) {
     const dayOffset = Math.floor(Math.random() * 3)
     const d = new Date(now)
     d.setDate(d.getDate() - dayOffset)
     d.setHours(9 + Math.floor(Math.random() * 12))
+    const isUSD = index > 0
     transactions.push({
       date: d,
       type: "income",
@@ -82,6 +87,8 @@ async function main() {
       category: "Viaje Uber",
       description: desc,
       userId: user.id,
+      currency: isUSD ? "$" : "L",
+      exchangeRate: isUSD ? 25.00 : null,
     })
   }
 
@@ -94,6 +101,8 @@ async function main() {
     category: "Gasolina",
     description: "Tanque lleno",
     userId: user.id,
+    currency: "L",
+    exchangeRate: null,
   })
   await prisma.transaction.createMany({ data: transactions })
 

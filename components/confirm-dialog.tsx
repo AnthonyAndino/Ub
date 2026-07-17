@@ -35,7 +35,7 @@ export default function ConfirmDialog({
         )
       }
     >
-      <p className="text-sm text-slate-500 font-medium leading-relaxed">
+      <p className="text-sm text-slate-500 font-medium leading-relaxed text-center">
         {message}
       </p>
       <div className="flex gap-3 mt-2">

@@ -4,8 +4,47 @@ import sharp from "sharp"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { rateLimit } from "@/lib/rate-limit"
+import { getDefaultRate } from "@/lib/currency"
 
 // ─── HELPERS ─────────────────────────────────
+
+interface TxLike {
+  amount: { toNumber(): number }
+  currency: string
+  exchangeRate: { toNumber(): number } | null
+}
+
+function toLempiras(t: TxLike, defaultRate: number): number {
+  const raw = t.amount.toNumber()
+  if (t.currency === "$") return raw * (t.exchangeRate?.toNumber() ?? defaultRate)
+  return raw
+}
+
+function sumByCurrency(txs: TxLike[], currency: "$" | "L"): number {
+  return txs
+    .filter((t) => t.currency === currency)
+    .reduce((s, t) => s + t.amount.toNumber(), 0)
+}
+
+function currencySymbol(t: TxLike): string {
+  return t.currency === "$" ? "$" : "L"
+}
+
+const USD_FMT = '"$"#,##0.00'
+const LPS_FMT = '"L"#,##0.00'
+
+function formatTotalsSubtitle(txs: TxLike[]): string {
+  const totalUsd = sumByCurrency(txs, "$")
+  const totalLps = sumByCurrency(txs, "L")
+  const parts = [`${txs.length} transacciones`]
+  if (totalUsd > 0) {
+    parts.push(`USD: $${totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}`)
+  }
+  if (totalLps > 0) {
+    parts.push(`LPS: L${totalLps.toLocaleString("en-US", { minimumFractionDigits: 2 })}`)
+  }
+  return parts.join("  •  ")
+}
 
 function formatDate(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0")
@@ -21,7 +60,7 @@ const CHART_COLORS = [
   "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
 ]
 
-// ─── SVG CHART GENERATORS (shapes only, no text) ─
+// ─── SVG CHART GENERATORS (with inline labels) ─
 
 function polarToCartesian(cx: number, cy: number, r: number, angle: number) {
   return {
@@ -30,23 +69,50 @@ function polarToCartesian(cx: number, cy: number, r: number, angle: number) {
   }
 }
 
-/** Donut chart — only arcs and center hole, NO text or legend */
-function generateDonutSVG(
-  segments: { label: string; value: number; color: string }[],
-): string {
-  const size = 300
-  const cx = size / 2
-  const cy = size / 2
-  const outerR = 130
-  const innerR = 75
+function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function truncateLabel(label: string, max = 14): string {
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label
+}
+
+function formatChartUsd(n: number): string {
+  return `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+function formatChartLps(n: number): string {
+  return `L${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+function categoryAmountLabel(cat: CategorySplit): string {
+  const parts: string[] = []
+  if (cat.usd > 0) parts.push(formatChartUsd(cat.usd))
+  if (cat.lps > 0) parts.push(formatChartLps(cat.lps))
+  return parts.join(" · ") || "—"
+}
+
+/** Donut chart with category labels and legend baked into the image */
+function generateDonutSVG(categories: CategorySplit[]): string {
+  const width = 520
+  const height = Math.max(300, 56 + categories.length * 28)
+  const cx = 155
+  const cy = height / 2
+  const outerR = 115
+  const innerR = 65
+  const segments = categories.map((c) => ({ label: c.label, value: c.valueL, color: c.color }))
   const total = segments.reduce((s, seg) => s + seg.value, 0)
 
   if (total === 0) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" fill="white" rx="8"/><circle cx="${cx}" cy="${cy}" r="${outerR}" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="2"/></svg>`
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <rect width="${width}" height="${height}" fill="white" rx="8"/>
+      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" fill="#94A3B8">Sin gastos este mes</text>
+    </svg>`
   }
 
   let currentAngle = 0
   const paths: string[] = []
+  const sliceLabels: string[] = []
 
   segments.forEach((seg) => {
     const sliceAngle = (seg.value / total) * Math.PI * 2
@@ -69,53 +135,108 @@ function generateDonutSVG(
     ].join(" ")
 
     paths.push(`<path d="${d}" fill="${seg.color}" />`)
+
+    const pct = (seg.value / total) * 100
+    if (pct >= 8) {
+      const midAngle = startAngle + sliceAngle / 2
+      const labelR = (outerR + innerR) / 2
+      const pos = polarToCartesian(cx, cy, labelR, midAngle)
+      sliceLabels.push(
+        `<text x="${pos.x.toFixed(1)}" y="${(pos.y - 4).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="white">${escapeXml(truncateLabel(seg.label, 10))}</text>`,
+        `<text x="${pos.x.toFixed(1)}" y="${(pos.y + 10).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="9" fill="white">${pct.toFixed(0)}%</text>`,
+      )
+    }
+
     currentAngle = endAngle
   })
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-    <rect width="${size}" height="${size}" fill="white" rx="8" />
+  const legendX = 300
+  let legendY = 36
+  const legendItems = categories.map((cat) => {
+    const pct = total > 0 ? (cat.valueL / total) * 100 : 0
+    const y = legendY
+    legendY += 28
+    return `
+      <rect x="${legendX}" y="${y - 10}" width="12" height="12" rx="2" fill="${cat.color}" />
+      <text x="${legendX + 18}" y="${y}" font-family="Calibri, Arial, sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(truncateLabel(cat.label))}</text>
+      <text x="${legendX + 18}" y="${y + 14}" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#64748B">${escapeXml(categoryAmountLabel(cat))} · ${pct.toFixed(1)}%</text>
+    `
+  })
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" fill="white" rx="8" />
+    <text x="${legendX}" y="22" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#0F172A">Gastos por categoría</text>
     ${paths.join("\n")}
     <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="white" />
+    ${sliceLabels.join("\n")}
+    ${legendItems.join("\n")}
   </svg>`
 }
 
-/** Bar chart — only rectangles and grid lines, NO text */
+/** Bar chart with value and category labels inside the image */
 function generateBarChartSVG(
-  data: { label: string; value: number; color: string }[],
+  data: { label: string; value: number; color: string; fmt?: string }[],
 ): string {
-  const width = 380
-  const height = 260
-  const maxValue = Math.max(...data.map((d) => d.value), 1)
-  const chartLeft = 20
-  const chartRight = width - 20
-  const chartTop = 20
-  const chartBottom = height - 20
+  const width = 480
+  const height = 300
+  const chartLeft = 50
+  const chartRight = width - 30
+  const chartTop = 50
+  const chartBottom = height - 55
   const chartHeight = chartBottom - chartTop
-  const barWidth = Math.min(80, ((chartRight - chartLeft) / data.length) * 0.55)
+  const maxValue = Math.max(...data.map((d) => d.value), 1)
+  const barWidth = Math.min(72, ((chartRight - chartLeft) / data.length) * 0.55)
   const totalBarsWidth = barWidth * data.length
   const gap = ((chartRight - chartLeft) - totalBarsWidth) / (data.length + 1)
 
-  // Grid lines
   const gridLines: string[] = []
   for (let i = 0; i <= 4; i++) {
     const y = chartBottom - (i / 4) * chartHeight
     gridLines.push(`<line x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}" stroke="#E2E8F0" stroke-width="1" />`)
   }
 
-  // Bars
-  const bars = data.map((d, i) => {
-    const barH = Math.max(4, (d.value / maxValue) * chartHeight)
+  const barsAndLabels = data.map((d, i) => {
+    const barH = Math.max(6, (d.value / maxValue) * chartHeight)
     const x = chartLeft + gap + i * (barWidth + gap)
     const y = chartBottom - barH
-    return `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${d.color}" rx="6" />`
+    const valueLabel = d.fmt === "usd"
+      ? formatChartUsd(d.value)
+      : d.fmt === "lps"
+        ? formatChartLps(d.value)
+        : formatChartLps(d.value)
+    const labelX = x + barWidth / 2
+    return `
+      <rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${d.color}" rx="6" />
+      <text x="${labelX}" y="${y - 8}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="${d.color}">${escapeXml(valueLabel)}</text>
+      <text x="${labelX}" y="${chartBottom + 22}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
+    `
   })
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
+    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">Ingresos vs Gastos</text>
     ${gridLines.join("\n")}
     <line x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" stroke="#CBD5E1" stroke-width="1" />
-    ${bars.join("\n")}
+    ${barsAndLabels.join("\n")}
   </svg>`
+}
+
+function placeChartImage(
+  ws: ExcelJS.Worksheet,
+  wb: ExcelJS.Workbook,
+  png: Buffer,
+  startRow: number,
+  rowSpan: number,
+) {
+  for (let r = startRow; r < startRow + rowSpan; r++) {
+    ws.getRow(r).height = 22
+  }
+  const imageId = wb.addImage({ buffer: png as any, extension: "png" })
+  ws.addImage(imageId, {
+    tl: { col: 1, row: startRow - 1 } as ExcelJS.Anchor,
+    br: { col: 7, row: startRow - 1 + rowSpan } as ExcelJS.Anchor,
+    editAs: "oneCell",
+  })
 }
 
 async function svgToPng(svg: string): Promise<Buffer> {
@@ -138,18 +259,36 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 
 // ─── AGGREGATE BY CATEGORY ───────────────────
 
+interface CategorySplit {
+  label: string
+  usd: number
+  lps: number
+  valueL: number
+  color: string
+}
+
 function aggregateByCategory(
-  txs: { category: string; amount: { toNumber(): number } }[],
-): { label: string; value: number; color: string }[] {
-  const map = new Map<string, number>()
+  txs: (TxLike & { category: string })[],
+  defaultRate: number,
+): CategorySplit[] {
+  const map = new Map<string, { usd: number; lps: number }>()
   txs.forEach((t) => {
-    map.set(t.category, (map.get(t.category) || 0) + t.amount.toNumber())
+    const entry = map.get(t.category) ?? { usd: 0, lps: 0 }
+    const raw = t.amount.toNumber()
+    if (t.currency === "$") entry.usd += raw
+    else entry.lps += raw
+    map.set(t.category, entry)
   })
   return Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, value], i) => ({
+    .map(([label, { usd, lps }]) => ({
       label,
-      value: Math.round(value * 100) / 100,
+      usd: Math.round(usd * 100) / 100,
+      lps: Math.round(lps * 100) / 100,
+      valueL: Math.round((usd * defaultRate + lps) * 100) / 100,
+    }))
+    .sort((a, b) => b.valueL - a.valueL)
+    .map((cat, i) => ({
+      ...cat,
       color: CHART_COLORS[i % CHART_COLORS.length],
     }))
 }
@@ -158,7 +297,7 @@ function aggregateByCategory(
 
 function buildDetailSheet(
   sheet: ExcelJS.Worksheet,
-  rows: { date: Date; category: string; description: string | null; amount: { toNumber(): number }; type: string }[],
+  rows: (TxLike & { date: Date; category: string; description: string | null; type: string })[],
   title: string,
   headerFill: ExcelJS.Fill,
   accentColor: string,
@@ -169,27 +308,32 @@ function buildDetailSheet(
     { width: 16 },
     { width: 28 },
     { width: 42 },
+    { width: 10 },
     { width: 18 },
   ]
 
+  const totalUsd = sumByCurrency(rows, "$")
+  const totalLps = sumByCurrency(rows, "L")
+  const usdRows = rows.filter((t) => t.currency === "$")
+  const lpsRows = rows.filter((t) => t.currency === "L")
+
   // Title
-  sheet.mergeCells("B1:E1")
+  sheet.mergeCells("B1:F1")
   const titleCell = sheet.getCell("B1")
   titleCell.value = title
   titleCell.font = { bold: true, size: 16, color: { argb: "FF0F172A" }, name: "Calibri" }
   sheet.getRow(1).height = 36
 
-  // Count & total subtitle
-  const total = rows.reduce((s, t) => s + t.amount.toNumber(), 0)
-  sheet.mergeCells("B2:E2")
+  // Count & totals by currency
+  sheet.mergeCells("B2:F2")
   const subCell = sheet.getCell("B2")
-  subCell.value = `${rows.length} transacciones  •  Total: $${total.toLocaleString("en-US", { minimumFractionDigits: 2 })}`
+  subCell.value = formatTotalsSubtitle(rows)
   subCell.font = { size: 11, color: { argb: "FF64748B" }, name: "Calibri" }
 
   // Header row
   const hRow = sheet.getRow(4)
   hRow.height = 30
-  const headers = ["#", "Fecha", "Categoría", "Descripción", "Monto"]
+  const headers = ["#", "Fecha", "Categoría", "Descripción", "Moneda", "Monto"]
   headers.forEach((h, i) => {
     const cell = hRow.getCell(i + 2)
     cell.value = h
@@ -201,12 +345,13 @@ function buildDetailSheet(
 
   // Freeze header + autofilter
   sheet.views = [{ state: "frozen", ySplit: 4 }]
-  sheet.autoFilter = { from: { row: 4, column: 2 }, to: { row: 4, column: 6 } }
+  sheet.autoFilter = { from: { row: 4, column: 2 }, to: { row: 4, column: 7 } }
 
   // Data rows
   let rowIdx = 5
   rows.forEach((t, i) => {
     const row = sheet.getRow(rowIdx)
+    const sym = currencySymbol(t)
 
     row.getCell(2).value = i + 1
     row.getCell(2).font = { size: 9, color: { argb: "FF94A3B8" }, name: "Calibri" }
@@ -222,138 +367,72 @@ function buildDetailSheet(
     row.getCell(5).value = t.description ?? "—"
     row.getCell(5).font = DATA_FONT
 
-    row.getCell(6).value = t.amount.toNumber()
-    row.getCell(6).numFmt = '"$"#,##0.00'
-    row.getCell(6).font = { bold: true, size: 11, color: { argb: accentColor }, name: "Calibri" }
-    row.getCell(6).alignment = { horizontal: "right" }
+    row.getCell(6).value = sym
+    row.getCell(6).font = { bold: true, size: 10, name: "Calibri", color: { argb: "FF64748B" } }
+    row.getCell(6).alignment = { horizontal: "center" }
+
+    row.getCell(7).value = t.amount.toNumber()
+    row.getCell(7).numFmt = sym === "$" ? USD_FMT : LPS_FMT
+    row.getCell(7).font = { bold: true, size: 11, color: { argb: accentColor }, name: "Calibri" }
+    row.getCell(7).alignment = { horizontal: "right" }
 
     if (i % 2 === 1) {
-      for (let c = 2; c <= 6; c++) row.getCell(c).fill = ZEBRA_FILL
+      for (let c = 2; c <= 7; c++) row.getCell(c).fill = ZEBRA_FILL
     }
-    for (let c = 2; c <= 6; c++) row.getCell(c).border = THIN_BORDER
+    for (let c = 2; c <= 7; c++) row.getCell(c).border = THIN_BORDER
 
     rowIdx++
   })
 
-  // Total row
-  const totalRow = sheet.getRow(rowIdx + 1)
-  totalRow.getCell(4).value = "TOTAL"
-  totalRow.getCell(4).font = { bold: true, size: 12, color: { argb: "FF0F172A" }, name: "Calibri" }
-  totalRow.getCell(4).alignment = { horizontal: "right" }
-  totalRow.getCell(6).value = total
-  totalRow.getCell(6).numFmt = '"$"#,##0.00'
-  totalRow.getCell(6).font = { bold: true, size: 13, color: { argb: accentColor }, name: "Calibri" }
-  for (let c = 2; c <= 6; c++) {
-    totalRow.getCell(c).border = {
-      ...THIN_BORDER,
-      top: { style: "double", color: { argb: "FF475569" } },
+  // Total rows — one per currency present
+  let totalRowIdx = rowIdx + 1
+  const totalRows: { label: string; value: number; fmt: string }[] = []
+  if (totalUsd > 0) totalRows.push({ label: "TOTAL USD", value: totalUsd, fmt: USD_FMT })
+  if (totalLps > 0) totalRows.push({ label: "TOTAL LPS", value: totalLps, fmt: LPS_FMT })
+
+  totalRows.forEach((tr) => {
+    const totalRow = sheet.getRow(totalRowIdx)
+    totalRow.getCell(5).value = tr.label
+    totalRow.getCell(5).font = { bold: true, size: 12, color: { argb: "FF0F172A" }, name: "Calibri" }
+    totalRow.getCell(5).alignment = { horizontal: "right" }
+    totalRow.getCell(7).value = tr.value
+    totalRow.getCell(7).numFmt = tr.fmt
+    totalRow.getCell(7).font = { bold: true, size: 13, color: { argb: accentColor }, name: "Calibri" }
+    totalRow.getCell(7).alignment = { horizontal: "right" }
+    for (let c = 2; c <= 7; c++) {
+      totalRow.getCell(c).border = {
+        ...THIN_BORDER,
+        top: { style: "double", color: { argb: "FF475569" } },
+      }
     }
-  }
+    totalRowIdx++
+  })
 
   // Summary
-  const sRow = rowIdx + 4
-  const avg = rows.length > 0 ? total / rows.length : 0
+  const sRow = totalRowIdx + 2
   sheet.getCell(`C${sRow}`).value = "Resumen"
   sheet.getCell(`C${sRow}`).font = { bold: true, size: 12, color: { argb: "FF0F172A" }, name: "Calibri" }
   sheet.getCell(`C${sRow + 1}`).value = "Transacciones:"
   sheet.getCell(`C${sRow + 1}`).font = { size: 10, name: "Calibri", color: { argb: "FF64748B" } }
   sheet.getCell(`D${sRow + 1}`).value = rows.length
   sheet.getCell(`D${sRow + 1}`).font = { bold: true, size: 11, name: "Calibri", color: { argb: "FF1E293B" } }
-  sheet.getCell(`C${sRow + 2}`).value = "Promedio:"
-  sheet.getCell(`C${sRow + 2}`).font = { size: 10, name: "Calibri", color: { argb: "FF64748B" } }
-  sheet.getCell(`D${sRow + 2}`).value = avg
-  sheet.getCell(`D${sRow + 2}`).numFmt = '"$"#,##0.00'
-  sheet.getCell(`D${sRow + 2}`).font = { bold: true, size: 11, name: "Calibri", color: { argb: accentColor } }
-}
 
-// ─── HELPER: Write color legend in Excel cells ──
-
-function writeColorLegend(
-  ws: ExcelJS.Worksheet,
-  categories: { label: string; value: number; color: string }[],
-  startRow: number,
-  startCol: number,
-  total: number,
-  accentArgb: string,
-) {
-  // Header
-  const headers = ["", "Categoría", "Monto", "%"]
-  headers.forEach((h, i) => {
-    const cell = ws.getCell(startRow, startCol + i)
-    cell.value = h
-    cell.font = { bold: true, size: 9, color: { argb: "FF64748B" }, name: "Calibri" }
-    cell.alignment = { horizontal: i === 2 ? "right" : i === 3 ? "center" : "left" }
-    cell.border = { bottom: { style: "thin", color: { argb: "FFE2E8F0" } } }
-  })
-
-  categories.forEach((cat, i) => {
-    const row = startRow + 1 + i
-    const pct = total > 0 ? (cat.value / total) * 100 : 0
-
-    // Color swatch
-    const colorCell = ws.getCell(row, startCol)
-    colorCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
-    colorCell.border = THIN_BORDER
-
-    // Category name
-    const nameCell = ws.getCell(row, startCol + 1)
-    nameCell.value = cat.label
-    nameCell.font = { bold: true, size: 10, name: "Calibri", color: { argb: "FF334155" } }
-    nameCell.border = THIN_BORDER
-
-    // Amount
-    const amountCell = ws.getCell(row, startCol + 2)
-    amountCell.value = cat.value
-    amountCell.numFmt = '"$"#,##0.00'
-    amountCell.font = { bold: true, size: 10, name: "Calibri", color: { argb: accentArgb } }
-    amountCell.alignment = { horizontal: "right" }
-    amountCell.border = THIN_BORDER
-
-    // Percentage
-    const pctCell = ws.getCell(row, startCol + 3)
-    pctCell.value = pct / 100
-    pctCell.numFmt = "0.0%"
-    pctCell.font = { size: 10, name: "Calibri", color: { argb: "FF64748B" } }
-    pctCell.alignment = { horizontal: "center" }
-    pctCell.border = THIN_BORDER
-
-    // Zebra
-    if (i % 2 === 1) {
-      for (let c = startCol; c < startCol + 4; c++) {
-        ws.getCell(row, c).fill = c === startCol
-          ? { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
-          : ZEBRA_FILL
-      }
-    }
-  })
-}
-
-// ─── HELPER: Write bar chart labels in Excel cells ──
-
-function writeBarLabels(
-  ws: ExcelJS.Worksheet,
-  data: { label: string; value: number; color: string }[],
-  startRow: number,
-  startCol: number,
-) {
-  data.forEach((d, i) => {
-    const col = startCol + i * 2
-
-    // Color swatch
-    const colorCell = ws.getCell(startRow, col)
-    colorCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: d.color.replace("#", "FF") } }
-    colorCell.border = THIN_BORDER
-
-    // Label + value
-    const labelCell = ws.getCell(startRow, col + 1)
-    labelCell.value = d.label
-    labelCell.font = { bold: true, size: 10, name: "Calibri", color: { argb: "FF334155" } }
-
-    const valueCell = ws.getCell(startRow + 1, col + 1)
-    valueCell.value = d.value
-    valueCell.numFmt = '"$"#,##0.00'
-    valueCell.font = { bold: true, size: 11, name: "Calibri", color: { argb: d.color.replace("#", "FF") } }
-  })
+  let summaryOffset = 2
+  if (usdRows.length > 0) {
+    sheet.getCell(`C${sRow + summaryOffset}`).value = "Promedio USD:"
+    sheet.getCell(`C${sRow + summaryOffset}`).font = { size: 10, name: "Calibri", color: { argb: "FF64748B" } }
+    sheet.getCell(`D${sRow + summaryOffset}`).value = totalUsd / usdRows.length
+    sheet.getCell(`D${sRow + summaryOffset}`).numFmt = USD_FMT
+    sheet.getCell(`D${sRow + summaryOffset}`).font = { bold: true, size: 11, name: "Calibri", color: { argb: accentColor } }
+    summaryOffset++
+  }
+  if (lpsRows.length > 0) {
+    sheet.getCell(`C${sRow + summaryOffset}`).value = "Promedio LPS:"
+    sheet.getCell(`C${sRow + summaryOffset}`).font = { size: 10, name: "Calibri", color: { argb: "FF64748B" } }
+    sheet.getCell(`D${sRow + summaryOffset}`).value = totalLps / lpsRows.length
+    sheet.getCell(`D${sRow + summaryOffset}`).numFmt = LPS_FMT
+    sheet.getCell(`D${sRow + summaryOffset}`).font = { bold: true, size: 11, name: "Calibri", color: { argb: accentColor } }
+  }
 }
 
 // ─── MAIN EXPORT HANDLER ─────────────────────
@@ -395,29 +474,42 @@ export async function GET(req: NextRequest) {
     orderBy: { date: "asc" },
   })
 
+  const defaultRate = await getDefaultRate()
+
   const incomes = transactions.filter((t) => t.type === "income")
   const expenses = transactions.filter((t) => t.type === "expense")
 
-  const totalIncome = incomes.reduce((s, t) => s + t.amount.toNumber(), 0)
-  const totalExpense = expenses.reduce((s, t) => s + t.amount.toNumber(), 0)
-  const balance = totalIncome - totalExpense
+  const incomeUsd = sumByCurrency(incomes, "$")
+  const incomeLps = sumByCurrency(incomes, "L")
+  const expenseUsd = sumByCurrency(expenses, "$")
+  const expenseLps = sumByCurrency(expenses, "L")
 
-  const expenseCategories = aggregateByCategory(expenses)
-  const incomeCategories = aggregateByCategory(incomes)
+  const totalIncomeL = incomes.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
+  const totalExpenseL = expenses.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
+  const balanceUsd = incomeUsd - expenseUsd
+  const balanceLps = incomeLps - expenseLps
+  const balanceL = totalIncomeL - totalExpenseL
+
+  const expenseCategories = aggregateByCategory(expenses, defaultRate)
+  const incomeCategories = aggregateByCategory(incomes, defaultRate)
 
   const monthName = new Date(year, monthNum - 1).toLocaleString("es-MX", {
     month: "long",
     year: "numeric",
   })
 
-  // ─── GENERATE CHART IMAGES (shapes only) ────
+  const donutRowSpan = Math.max(16, Math.ceil(expenseCategories.length * 1.4) + 4)
+  const barRowSpan = 16
+
+  // ─── GENERATE CHART IMAGES (labels baked into PNG) ────
   const [donutPng, barPng] = await Promise.all([
     svgToPng(generateDonutSVG(expenseCategories)),
     svgToPng(
       generateBarChartSVG([
-        { label: "Ingresos", value: totalIncome, color: "#059669" },
-        { label: "Gastos", value: totalExpense, color: "#DC2626" },
-        { label: "Balance", value: Math.abs(balance), color: balance >= 0 ? "#2563EB" : "#F59E0B" },
+        { label: "Ingresos USD", value: incomeUsd, color: "#059669", fmt: "usd" },
+        { label: "Ingresos LPS", value: incomeLps, color: "#10B981", fmt: "lps" },
+        { label: "Gastos USD", value: expenseUsd, color: "#DC2626", fmt: "usd" },
+        { label: "Gastos LPS", value: expenseLps, color: "#EF4444", fmt: "lps" },
       ]),
     ),
   ])
@@ -439,8 +531,9 @@ export async function GET(req: NextRequest) {
     { width: 4 },   // E - spacer
     { width: 4 },   // F - color swatch
     { width: 20 },  // G - category name
-    { width: 16 },  // H - amount
-    { width: 10 },  // I - percentage
+    { width: 14 },  // H - USD
+    { width: 14 },  // I - LPS
+    { width: 10 },  // J - percentage
   ]
 
   let row = 2
@@ -462,16 +555,35 @@ export async function GET(req: NextRequest) {
   ws.getCell(`B${row}`).font = { italic: true, size: 10, color: { argb: "FF94A3B8" }, name: "Calibri" }
   row += 2 // blank row
 
-  // ── Metric Cards (row 6-8) ──
+  // ── Metric Cards ──
   const metrics = [
-    { label: "Ingresos", value: totalIncome, argb: "FF059669", count: incomes.length },
-    { label: "Gastos", value: totalExpense, argb: "FFDC2626", count: expenses.length },
-    { label: "Balance", value: balance, argb: balance >= 0 ? "FF059669" : "FFDC2626", count: transactions.length },
+    {
+      label: "Ingresos",
+      usd: incomeUsd,
+      lps: incomeLps,
+      argb: "FF059669",
+      count: incomes.length,
+    },
+    {
+      label: "Gastos",
+      usd: expenseUsd,
+      lps: expenseLps,
+      argb: "FFDC2626",
+      count: expenses.length,
+    },
+    {
+      label: "Balance",
+      usd: balanceUsd,
+      lps: balanceLps,
+      argb: balanceUsd >= 0 && balanceLps >= 0 ? "FF059669" : "FFDC2626",
+      count: transactions.length,
+    },
   ]
 
   ws.getRow(row).height = 22
-  ws.getRow(row + 1).height = 48
-  ws.getRow(row + 2).height = 22
+  ws.getRow(row + 1).height = 32
+  ws.getRow(row + 2).height = 32
+  ws.getRow(row + 3).height = 22
 
   metrics.forEach((m, i) => {
     const col = 2 + i
@@ -480,84 +592,56 @@ export async function GET(req: NextRequest) {
     ws.getCell(row, col).font = { bold: true, size: 10, color: { argb: "FF64748B" }, name: "Calibri" }
     ws.getCell(row, col).alignment = { horizontal: "center" }
 
-    const valueCell = ws.getCell(row + 1, col)
-    valueCell.value = m.value
-    valueCell.numFmt = '"$"#,##0.00'
-    valueCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: m.argb } }
-    valueCell.font = { bold: true, size: 20, color: { argb: "FFFFFFFF" }, name: "Calibri" }
-    valueCell.alignment = { horizontal: "center", vertical: "middle" }
-    valueCell.border = {
-      top: { style: "medium", color: { argb: "FFE2E8F0" } },
-      bottom: { style: "medium", color: { argb: "FFE2E8F0" } },
-      left: { style: "medium", color: { argb: "FFE2E8F0" } },
-      right: { style: "medium", color: { argb: "FFE2E8F0" } },
+    const usdCell = ws.getCell(row + 1, col)
+    usdCell.value = m.usd
+    usdCell.numFmt = USD_FMT
+    usdCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: m.argb } }
+    usdCell.font = { bold: true, size: 16, color: { argb: "FFFFFFFF" }, name: "Calibri" }
+    usdCell.alignment = { horizontal: "center", vertical: "middle" }
+
+    const lpsCell = ws.getCell(row + 2, col)
+    lpsCell.value = m.lps
+    lpsCell.numFmt = LPS_FMT
+    lpsCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: m.argb } }
+    lpsCell.font = { bold: true, size: 16, color: { argb: "FFFFFFFF" }, name: "Calibri" }
+    lpsCell.alignment = { horizontal: "center", vertical: "middle" }
+
+    for (const r of [row + 1, row + 2]) {
+      ws.getCell(r, col).border = {
+        top: { style: "medium", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "medium", color: { argb: "FFE2E8F0" } },
+        left: { style: "medium", color: { argb: "FFE2E8F0" } },
+        right: { style: "medium", color: { argb: "FFE2E8F0" } },
+      }
     }
 
-    ws.getCell(row + 2, col).value = `${m.count} transacciones`
-    ws.getCell(row + 2, col).font = { size: 9, color: { argb: "FF94A3B8" }, name: "Calibri" }
-    ws.getCell(row + 2, col).alignment = { horizontal: "center" }
+    ws.getCell(row + 3, col).value = `${m.count} transacciones`
+    ws.getCell(row + 3, col).font = { size: 9, color: { argb: "FF94A3B8" }, name: "Calibri" }
+    ws.getCell(row + 3, col).alignment = { horizontal: "center" }
   })
-  row += 4 // after metrics + blank
+  row += 5 // after metrics + blank
 
-  // ── Section: Gastos por Categoría (Donut + Legend) ──
-  ws.mergeCells(`B${row}:D${row}`)
+  // ── Section: Gastos por Categoría (donut image with inline labels) ──
+  ws.mergeCells(`B${row}:H${row}`)
   ws.getCell(`B${row}`).value = "Gastos por Categoría"
   ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: "FF0F172A" }, name: "Calibri" }
   ws.getRow(row).height = 28
   row++
 
-  // Donut image on left (col B, spans ~16 rows)
-  const donutImgId = wb.addImage({ buffer: donutPng as any, extension: "png" })
   const donutRow = row
-  ws.addImage(donutImgId, {
-    tl: { col: 1, row: donutRow },
-    ext: { width: 280, height: 280 },
-  })
+  placeChartImage(ws, wb, donutPng, donutRow, donutRowSpan)
+  row += donutRowSpan + 1
 
-  // Legend on right (col F-I) at same height
-  writeColorLegend(ws, expenseCategories, donutRow, 6, totalExpense, "FFDC2626")
-
-  // Advance past donut image (280px ≈ 15 rows at default height ~20px)
-  const donutRows = Math.max(15, expenseCategories.length + 2)
-  row += donutRows + 1
-
-  // ── Section: Ingresos vs Gastos (Bar chart + labels) ──
-  ws.mergeCells(`B${row}:D${row}`)
+  // ── Section: Ingresos vs Gastos (bar chart with inline labels) ──
+  ws.mergeCells(`B${row}:H${row}`)
   ws.getCell(`B${row}`).value = "Ingresos vs Gastos"
   ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: "FF0F172A" }, name: "Calibri" }
   ws.getRow(row).height = 28
   row++
 
-  // Bar chart image
-  const barImgId = wb.addImage({ buffer: barPng as any, extension: "png" })
   const barRow = row
-  ws.addImage(barImgId, {
-    tl: { col: 1, row: barRow },
-    ext: { width: 350, height: 240 },
-  })
-
-  // Bar labels on the right
-  const barData = [
-    { label: "Ingresos", value: totalIncome, color: "#059669" },
-    { label: "Gastos", value: totalExpense, color: "#DC2626" },
-    { label: "Balance", value: Math.abs(balance), color: balance >= 0 ? "#2563EB" : "#F59E0B" },
-  ]
-  barData.forEach((d, i) => {
-    const legendRow = barRow + 1 + i * 2
-
-    ws.getCell(legendRow, 6).fill = { type: "pattern", pattern: "solid", fgColor: { argb: d.color.replace("#", "FF") } }
-    ws.getCell(legendRow, 6).border = THIN_BORDER
-
-    ws.getCell(legendRow, 7).value = d.label
-    ws.getCell(legendRow, 7).font = { bold: true, size: 11, name: "Calibri", color: { argb: "FF334155" } }
-
-    ws.getCell(legendRow, 8).value = d.value
-    ws.getCell(legendRow, 8).numFmt = '"$"#,##0.00'
-    ws.getCell(legendRow, 8).font = { bold: true, size: 12, name: "Calibri", color: { argb: d.color.replace("#", "FF") } }
-  })
-
-  // Advance past bar chart (240px ≈ 13 rows)
-  row += 14
+  placeChartImage(ws, wb, barPng, barRow, barRowSpan)
+  row += barRowSpan + 1
 
   // ── Section: Desglose Completo - Gastos ──
   ws.mergeCells(`B${row}:H${row}`)
@@ -567,7 +651,7 @@ export async function GET(req: NextRequest) {
   row++
 
   // Table header
-  const catHeaders = ["", "Categoría", "Monto", "% del Total", "Transacciones"]
+  const catHeaders = ["", "Categoría", "USD", "LPS", "% del Total", "Transacciones"]
   catHeaders.forEach((h, i) => {
     const cell = ws.getCell(row, 2 + i)
     cell.value = h
@@ -583,9 +667,8 @@ export async function GET(req: NextRequest) {
   expenseCategories.forEach((cat, i) => {
     const r = row + i
     const txCount = expenses.filter((t) => t.category === cat.label).length
-    const pct = totalExpense > 0 ? (cat.value / totalExpense) * 100 : 0
+    const pct = totalExpenseL > 0 ? (cat.valueL / totalExpenseL) * 100 : 0
 
-    // Color swatch
     ws.getCell(r, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
     ws.getCell(r, 2).border = THIN_BORDER
 
@@ -593,25 +676,31 @@ export async function GET(req: NextRequest) {
     ws.getCell(r, 3).font = { ...DATA_FONT, bold: true }
     ws.getCell(r, 3).border = THIN_BORDER
 
-    ws.getCell(r, 4).value = cat.value
-    ws.getCell(r, 4).numFmt = '"$"#,##0.00'
+    ws.getCell(r, 4).value = cat.usd > 0 ? cat.usd : "—"
+    if (cat.usd > 0) ws.getCell(r, 4).numFmt = USD_FMT
     ws.getCell(r, 4).font = { bold: true, size: 11, color: { argb: "FFDC2626" }, name: "Calibri" }
     ws.getCell(r, 4).alignment = { horizontal: "right" }
     ws.getCell(r, 4).border = THIN_BORDER
 
-    ws.getCell(r, 5).value = pct / 100
-    ws.getCell(r, 5).numFmt = "0.0%"
-    ws.getCell(r, 5).font = DATA_FONT
-    ws.getCell(r, 5).alignment = { horizontal: "center" }
+    ws.getCell(r, 5).value = cat.lps > 0 ? cat.lps : "—"
+    if (cat.lps > 0) ws.getCell(r, 5).numFmt = LPS_FMT
+    ws.getCell(r, 5).font = { bold: true, size: 11, color: { argb: "FFDC2626" }, name: "Calibri" }
+    ws.getCell(r, 5).alignment = { horizontal: "right" }
     ws.getCell(r, 5).border = THIN_BORDER
 
-    ws.getCell(r, 6).value = txCount
+    ws.getCell(r, 6).value = pct / 100
+    ws.getCell(r, 6).numFmt = "0.0%"
     ws.getCell(r, 6).font = DATA_FONT
     ws.getCell(r, 6).alignment = { horizontal: "center" }
     ws.getCell(r, 6).border = THIN_BORDER
 
+    ws.getCell(r, 7).value = txCount
+    ws.getCell(r, 7).font = DATA_FONT
+    ws.getCell(r, 7).alignment = { horizontal: "center" }
+    ws.getCell(r, 7).border = THIN_BORDER
+
     if (i % 2 === 1) {
-      for (let c = 3; c <= 6; c++) ws.getCell(r, c).fill = ZEBRA_FILL
+      for (let c = 3; c <= 7; c++) ws.getCell(r, c).fill = ZEBRA_FILL
     }
   })
   row += expenseCategories.length + 2
@@ -637,7 +726,7 @@ export async function GET(req: NextRequest) {
   incomeCategories.forEach((cat, i) => {
     const r = row + i
     const txCount = incomes.filter((t) => t.category === cat.label).length
-    const pct = totalIncome > 0 ? (cat.value / totalIncome) * 100 : 0
+    const pct = totalIncomeL > 0 ? (cat.valueL / totalIncomeL) * 100 : 0
 
     ws.getCell(r, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
     ws.getCell(r, 2).border = THIN_BORDER
@@ -646,25 +735,31 @@ export async function GET(req: NextRequest) {
     ws.getCell(r, 3).font = { ...DATA_FONT, bold: true }
     ws.getCell(r, 3).border = THIN_BORDER
 
-    ws.getCell(r, 4).value = cat.value
-    ws.getCell(r, 4).numFmt = '"$"#,##0.00'
+    ws.getCell(r, 4).value = cat.usd > 0 ? cat.usd : "—"
+    if (cat.usd > 0) ws.getCell(r, 4).numFmt = USD_FMT
     ws.getCell(r, 4).font = { bold: true, size: 11, color: { argb: "FF1D4ED8" }, name: "Calibri" }
     ws.getCell(r, 4).alignment = { horizontal: "right" }
     ws.getCell(r, 4).border = THIN_BORDER
 
-    ws.getCell(r, 5).value = pct / 100
-    ws.getCell(r, 5).numFmt = "0.0%"
-    ws.getCell(r, 5).font = DATA_FONT
-    ws.getCell(r, 5).alignment = { horizontal: "center" }
+    ws.getCell(r, 5).value = cat.lps > 0 ? cat.lps : "—"
+    if (cat.lps > 0) ws.getCell(r, 5).numFmt = LPS_FMT
+    ws.getCell(r, 5).font = { bold: true, size: 11, color: { argb: "FF1D4ED8" }, name: "Calibri" }
+    ws.getCell(r, 5).alignment = { horizontal: "right" }
     ws.getCell(r, 5).border = THIN_BORDER
 
-    ws.getCell(r, 6).value = txCount
+    ws.getCell(r, 6).value = pct / 100
+    ws.getCell(r, 6).numFmt = "0.0%"
     ws.getCell(r, 6).font = DATA_FONT
     ws.getCell(r, 6).alignment = { horizontal: "center" }
     ws.getCell(r, 6).border = THIN_BORDER
 
+    ws.getCell(r, 7).value = txCount
+    ws.getCell(r, 7).font = DATA_FONT
+    ws.getCell(r, 7).alignment = { horizontal: "center" }
+    ws.getCell(r, 7).border = THIN_BORDER
+
     if (i % 2 === 1) {
-      for (let c = 3; c <= 6; c++) ws.getCell(r, c).fill = ZEBRA_FILL
+      for (let c = 3; c <= 7; c++) ws.getCell(r, c).fill = ZEBRA_FILL
     }
   })
 

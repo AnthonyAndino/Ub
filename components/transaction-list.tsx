@@ -7,7 +7,7 @@ import { Trash, DocumentText2 } from "reicon-react"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
-export function TransactionList() {
+export function TransactionList({ currency = "L" }: { currency?: string }) {
   const router = useRouter()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,7 +105,16 @@ export function TransactionList() {
                   t.type === "income" ? "text-green-600" : "text-red-500"
                 }`}
               >
-                {t.type === "income" ? "+" : "-"}${t.amount.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+                {t.type === "income" ? "+" : "-"}{t.currency}{t.amount.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {t.currency !== currency && (
+                  <span className="text-[10px] text-slate-400 font-medium ml-1">
+                    (~{currency}
+                    {(t.currency === "$"
+                      ? t.amount * (t.exchangeRate ?? 1)
+                      : t.amount / (t.exchangeRate ?? 1)
+                    ).toLocaleString("es-MX", { minimumFractionDigits: 0 })})
+                  </span>
+                )}
               </span>
               <button
                 onClick={() => handleDelete(t.id)}
