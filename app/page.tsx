@@ -4,24 +4,17 @@ import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { DashboardCards, EmptyCategory } from "@/components/dashboard-cards"
 import { EmergencyFundCard } from "@/components/emergency-fund-card"
-import { getDefaultRate } from "@/lib/currency"
+import { EXCHANGE_RATE, amountToLempiras, formatMoney, getDefaultRate, totalFromLempiras } from "@/lib/currency"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
-
-function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
-  if (txCurrency === preferred) return amount
-  if (preferred === "L") return amount * (rate ?? defaultRate)
-  if (preferred === "$") return amount / (rate ?? defaultRate)
-  return amount
-}
 
 export default async function Home() {
   const session = await auth()
   if (!session?.user?.id) redirect("/login")
 
   const userId = session.user.id
-  const defaultRate = await getDefaultRate()
+  await getDefaultRate()
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { currency: true },
@@ -39,22 +32,21 @@ export default async function Home() {
     orderBy: { date: "asc" },
   })
 
-  let ingresos = 0
-  let gastos = 0
   let ingresosL = 0
   let gastosL = 0
   transaccionesMes.forEach((t) => {
-    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
-    const enL = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, "L", defaultRate)
+    const enL = amountToLempiras(t.amount.toNumber(), t.currency)
     if (isOperationalIncome(t.type, t.category)) {
-      ingresos += monto
       ingresosL += enL
     } else if (isOperationalExpense(t.type, t.category)) {
-      gastos += monto
       gastosL += enL
     }
   })
-  const balance = ingresos - gastos
+
+  const balanceL = ingresosL - gastosL
+  const ingresos = totalFromLempiras(ingresosL, currency)
+  const gastos = totalFromLempiras(gastosL, currency)
+  const balance = totalFromLempiras(balanceL, currency)
   const retorno = gastosL > 0 ? ingresosL / gastosL : ingresosL > 0 ? 1 : 0
 
   const metasLogradas = await prisma.wishlistItem.count({
@@ -62,38 +54,44 @@ export default async function Home() {
   })
 
   const semanasData = [
-    { nombre: "Semana 1", income: 0, expense: 0 },
-    { nombre: "Semana 2", income: 0, expense: 0 },
-    { nombre: "Semana 3", income: 0, expense: 0 },
-    { nombre: "Semana 4", income: 0, expense: 0 },
+    { nombre: "Semana 1", incomeL: 0, expenseL: 0 },
+    { nombre: "Semana 2", incomeL: 0, expenseL: 0 },
+    { nombre: "Semana 3", incomeL: 0, expenseL: 0 },
+    { nombre: "Semana 4", incomeL: 0, expenseL: 0 },
   ]
 
   transaccionesMes.forEach((t) => {
     const dia = new Date(t.date).getDate()
     let indiceSemana = Math.floor((dia - 1) / 7)
     if (indiceSemana > 3) indiceSemana = 3
-    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
+    const enL = amountToLempiras(t.amount.toNumber(), t.currency)
     if (isOperationalIncome(t.type, t.category)) {
-      semanasData[indiceSemana].income += monto
+      semanasData[indiceSemana].incomeL += enL
     } else if (isOperationalExpense(t.type, t.category)) {
-      semanasData[indiceSemana].expense += monto
+      semanasData[indiceSemana].expenseL += enL
     }
   })
 
-  const maxSemanaVal = Math.max(...semanasData.flatMap((d) => [d.income, d.expense]), 100)
+  const semanasDisplay = semanasData.map((d) => ({
+    ...d,
+    income: totalFromLempiras(d.incomeL, currency),
+    expense: totalFromLempiras(d.expenseL, currency),
+  }))
 
-  const gastosPorCategoria: Record<string, number> = {}
+  const maxSemanaVal = Math.max(...semanasDisplay.flatMap((d) => [d.income, d.expense]), 100)
+
+  const gastosPorCategoriaL: Record<string, number> = {}
   transaccionesMes
     .filter((t) => isOperationalExpense(t.type, t.category))
     .forEach((t) => {
       const cat = t.category.trim().toLowerCase()
       const catFormatted = cat.charAt(0).toUpperCase() + cat.slice(1)
-      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
-      gastosPorCategoria[catFormatted] = (gastosPorCategoria[catFormatted] || 0) + monto
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      gastosPorCategoriaL[catFormatted] = (gastosPorCategoriaL[catFormatted] || 0) + enL
     })
 
-  const categoriasGastos = Object.entries(gastosPorCategoria)
-    .map(([name, value]) => ({ name, value }))
+  const categoriasGastos = Object.entries(gastosPorCategoriaL)
+    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, currency) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 4)
 
@@ -117,7 +115,7 @@ export default async function Home() {
             <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-500 tracking-tight">
               <span className="text-emerald-600 font-black">$1</span>
               <span className="text-slate-300">/</span>
-              <span className="text-slate-600">L{defaultRate.toFixed(2)}</span>
+              <span className="text-slate-600">L{EXCHANGE_RATE.toFixed(2)}</span>
             </div>
             <CurrencyToggle defaultCurrency={currency} />
             <ExportButton month={mesAnoUrl} />
@@ -150,7 +148,7 @@ export default async function Home() {
             <div className="flex flex-col gap-1 p-4 md:p-6 border-r border-slate-800">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ingreso Mensual</span>
               <span className="text-3xl md:text-4xl font-black text-white">
-                <span className="text-[#2563EB]">{currency}</span>{ingresos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span className="text-[#2563EB]">{currency}</span>{formatMoney(ingresos)}
               </span>
             </div>
 
@@ -158,7 +156,7 @@ export default async function Home() {
             <div className="flex flex-col gap-1 p-4 md:p-6 border-r border-slate-800">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Gasto Mensual</span>
               <span className="text-3xl md:text-4xl font-black text-white">
-                {currency}{gastos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {currency}{formatMoney(gastos)}
               </span>
             </div>
 
@@ -211,7 +209,7 @@ export default async function Home() {
                 <line x1="40" y1="130" x2="480" y2="130" stroke="#f1f5f9" strokeWidth="1" />
                 <line x1="40" y1="180" x2="480" y2="180" stroke="#f8fafc" strokeWidth="2" />
 
-                {semanasData.map((d, i) => {
+                {semanasDisplay.map((d, i) => {
                   const xBase = 60 + i * 110;
                   const hIncome = d.income > 0 ? (d.income / maxSemanaVal) * 130 : 2;
                   const hExpense = d.expense > 0 ? (d.expense / maxSemanaVal) * 130 : 2;
@@ -260,7 +258,7 @@ export default async function Home() {
                     <div key={i} className="flex flex-col gap-2">
                       <div className="flex justify-between items-center text-sm">
                         <span className="font-bold text-slate-700">{cat.name}</span>
-                        <span className="font-extrabold text-slate-900">{currency}{cat.value.toFixed(2)}</span>
+                        <span className="font-extrabold text-slate-900">{currency}{formatMoney(cat.value)}</span>
                       </div>
                       <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full bg-gradient-to-r ${coloresBarra[i % coloresBarra.length]} transition-all duration-500`} style={{ width: `${porcentaje}%` }}></div>

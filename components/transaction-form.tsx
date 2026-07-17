@@ -90,7 +90,7 @@ function CustomSelect({
   )
 }
 
-export function TransactionForm({ defaultRate = 25 }: { defaultRate?: number }) {
+export function TransactionForm({ defaultRate = 26.75 }: { defaultRate?: number }) {
   const [state, formAction, pending] = useActionState(createTransaction, null)
   const [type, setType] = useState("income")
   const [txCurrency, setTxCurrency] = useState("L")

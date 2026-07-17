@@ -4,6 +4,7 @@ import {
   TRANSFER_EXPENSE_CATEGORIES,
   TRANSFER_INCOME_CATEGORIES,
 } from "@/lib/transaction-categories"
+import { amountToLempiras } from "@/lib/currency"
 
 export interface BalanceTx {
   amount: { toNumber(): number }
@@ -14,8 +15,7 @@ export interface BalanceTx {
 }
 
 export function toLempiras(t: BalanceTx): number {
-  const val = t.amount.toNumber()
-  return t.currency === "$" && t.exchangeRate ? val * t.exchangeRate.toNumber() : val
+  return amountToLempiras(t.amount.toNumber(), t.currency)
 }
 
 type AmountFn = (t: BalanceTx) => number

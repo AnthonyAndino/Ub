@@ -4,25 +4,14 @@ import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
-import { getDefaultRate } from "@/lib/currency"
+import { amountToLempiras, formatMoney, totalFromLempiras } from "@/lib/currency"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 import { getGananciaNeta } from "@/lib/balance"
-
-function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
-  if (txCurrency === preferred) return amount
-  if (preferred === "L") return amount * (rate ?? defaultRate)
-  if (preferred === "$") return amount / (rate ?? defaultRate)
-  return amount
-}
 
 function getMonthRange(year: number, month: number) {
   const start = new Date(year, month, 1)
   const end = new Date(year, month + 1, 1)
   return { start, end }
-}
-
-function formatCurrency(n: number, c: string = "$") {
-  return c + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -41,7 +30,6 @@ export default async function GraficosPage() {
     select: { currency: true },
   })
   const preferredCurrency = userPref?.currency ?? "L"
-  const defaultRate = await getDefaultRate()
 
   // ── 1. Monthly Evolution (last 6 months) ──
   const monthlyData: { label: string; income: number; expense: number }[] = []
@@ -53,21 +41,21 @@ export default async function GraficosPage() {
 
     const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      select: { type: true, amount: true, currency: true, exchangeRate: true, category: true },
+      select: { type: true, amount: true, currency: true, category: true },
     })
 
-    let income = 0
-    let expense = 0
+    let incomeL = 0
+    let expenseL = 0
     totals.forEach((t) => {
-      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
-      if (isOperationalIncome(t.type, t.category)) income += monto
-      else if (isOperationalExpense(t.type, t.category)) expense += monto
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      if (isOperationalIncome(t.type, t.category)) incomeL += enL
+      else if (isOperationalExpense(t.type, t.category)) expenseL += enL
     })
 
     monthlyData.push({
       label: MONTHS_SHORT[m],
-      income,
-      expense,
+      income: totalFromLempiras(incomeL, preferredCurrency),
+      expense: totalFromLempiras(expenseL, preferredCurrency),
     })
   }
 
@@ -80,24 +68,24 @@ export default async function GraficosPage() {
     where: { userId, deletedAt: null, type: "expense", date: { gte: monthStart, lt: monthEnd } },
   })
 
-  const gastosPorCategoria: Record<string, number> = {}
+  const gastosPorCategoriaL: Record<string, number> = {}
   monthExpenses
     .filter((t) => isOperationalExpense(t.type, t.category))
     .forEach((t) => {
-    const cat = t.category.trim().toLowerCase()
-    const catF = cat.charAt(0).toUpperCase() + cat.slice(1)
-    const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
-    gastosPorCategoria[catF] = (gastosPorCategoria[catF] || 0) + monto
-  })
+      const cat = t.category.trim().toLowerCase()
+      const catF = cat.charAt(0).toUpperCase() + cat.slice(1)
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      gastosPorCategoriaL[catF] = (gastosPorCategoriaL[catF] || 0) + enL
+    })
 
-  const categorias = Object.entries(gastosPorCategoria)
-    .map(([name, value]) => ({ name, value }))
+  const categorias = Object.entries(gastosPorCategoriaL)
+    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, preferredCurrency) }))
     .sort((a, b) => b.value - a.value)
 
   const totalGastos = categorias.reduce((s, c) => s + c.value, 0)
 
   // ── 3. Accumulated Balance (last 6 months) ──
-  let accBalance = 0
+  let accBalanceL = 0
   const balanceData: { label: string; balance: number }[] = []
   for (let i = 5; i >= 0; i--) {
     let m = currentMonth - i
@@ -107,17 +95,14 @@ export default async function GraficosPage() {
 
     const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      select: { type: true, amount: true, currency: true, exchangeRate: true, category: true },
+      select: { type: true, amount: true, currency: true, category: true },
     })
 
-    const monthNet = getGananciaNeta(totals, (t) =>
-      convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate),
-    )
-    accBalance += monthNet
+    accBalanceL += getGananciaNeta(totals)
 
     balanceData.push({
       label: MONTHS_SHORT[m],
-      balance: accBalance,
+      balance: totalFromLempiras(accBalanceL, preferredCurrency),
     })
   }
 
@@ -125,7 +110,6 @@ export default async function GraficosPage() {
   const minBalance = Math.min(...balanceData.map((d) => d.balance), 0)
   const balanceRange = maxBalance - minBalance || 1
 
-  // Palette for donut
   const DONUT_COLORS = ["#2563EB", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316"]
 
   const mesAno = now.toISOString().slice(0, 7)
@@ -235,7 +219,6 @@ export default async function GraficosPage() {
               </div>
             ) : (
               <div className="flex flex-col md:flex-row items-center gap-8 flex-1">
-                {/* Donut SVG */}
                 <svg width="180" height="180" viewBox="0 0 180 180" className="shrink-0">
                   {(() => {
                     const cx = 90, cy = 90, r = 70
@@ -273,7 +256,6 @@ export default async function GraficosPage() {
                   </text>
                 </svg>
 
-                {/* Legend */}
                 <div className="flex flex-col gap-2.5 flex-1 w-full">
                   {categorias.slice(0, 6).map((cat, i) => (
                     <div key={i} className="flex items-center justify-between text-sm">
@@ -285,7 +267,7 @@ export default async function GraficosPage() {
                         <span className="text-xs text-slate-400 font-medium tabular-nums">
                           {Math.round((cat.value / totalGastos) * 100)}%
                         </span>
-                        <span className="font-extrabold text-slate-900 tabular-nums">{formatCurrency(cat.value, preferredCurrency)}</span>
+                        <span className="font-extrabold text-slate-900 tabular-nums">{preferredCurrency}{formatMoney(cat.value)}</span>
                       </div>
                     </div>
                   ))}
@@ -303,12 +285,10 @@ export default async function GraficosPage() {
 
             <div className="relative w-full overflow-hidden">
               <svg className="w-full h-auto min-h-[220px]" viewBox="0 0 500 220" fill="none">
-                {/* Grid */}
                 {[0, 1, 2, 3].map((i) => (
                   <line key={i} x1="40" y1={30 + i * 50} x2="470" y2={30 + i * 50} stroke="#f1f5f9" strokeWidth="1" />
                 ))}
 
-                {/* Line path */}
                 {(() => {
                   const points = balanceData.map((d, i) => {
                     const x = 60 + i * 75
@@ -327,7 +307,7 @@ export default async function GraficosPage() {
                         <g key={i}>
                           <circle cx={p.x} cy={p.y} r="5" fill="#2563EB" stroke="white" strokeWidth="2" className="cursor-pointer" />
                           <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#0f172a" className="text-[9px] font-bold">
-                            {formatCurrency(Math.round(p.val), preferredCurrency)}
+                            {preferredCurrency}{formatMoney(Math.round(p.val))}
                           </text>
                           <text x={p.x} y="200" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{p.label}</text>
                         </g>

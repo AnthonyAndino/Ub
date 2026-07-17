@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma"
 import { WISHLIST_PURCHASE_CATEGORY } from "@/lib/transaction-categories"
+import { amountToLempiras } from "@/lib/currency"
 
 export type WishlistItemTx = {
   type: string
@@ -10,8 +11,7 @@ export type WishlistItemTx = {
 }
 
 function toLempiras(t: WishlistItemTx): number {
-  const val = t.amount.toNumber()
-  return t.currency === "$" && t.exchangeRate ? val * t.exchangeRate.toNumber() : val
+  return amountToLempiras(t.amount.toNumber(), t.currency)
 }
 
 export function calcWishlistSavedAmount(transactions: WishlistItemTx[]): number {
@@ -55,7 +55,7 @@ export async function recordWishlistPurchase({
   existingTransactions?: WishlistItemTx[]
 }) {
   const savedAmount = calcWishlistSavedAmount(existingTransactions)
-  const purchaseInL = currency === "$" && exchangeRate ? purchaseAmount * exchangeRate : purchaseAmount
+  const purchaseInL = amountToLempiras(purchaseAmount, currency)
   const releaseAmount = Math.min(savedAmount, purchaseInL)
 
   if (!skipPurchaseExpense && !hasWishlistPurchaseExpense(existingTransactions)) {

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { listTransactions, deleteTransaction } from "@/lib/actions/transactions"
 import { Trash, DocumentText2 } from "reicon-react"
+import { amountToLempiras, totalFromLempiras } from "@/lib/currency"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
@@ -109,10 +110,7 @@ export function TransactionList({ currency = "L" }: { currency?: string }) {
                 {t.currency !== currency && (
                   <span className="text-[10px] text-slate-400 font-medium ml-1">
                     (~{currency}
-                    {(t.currency === "$"
-                      ? t.amount * (t.exchangeRate ?? 1)
-                      : t.amount / (t.exchangeRate ?? 1)
-                    ).toLocaleString("es-MX", { minimumFractionDigits: 0 })})
+                    {totalFromLempiras(amountToLempiras(t.amount, t.currency), currency).toLocaleString("es-MX", { minimumFractionDigits: 0 })})
                   </span>
                 )}
               </span>

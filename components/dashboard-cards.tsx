@@ -1,6 +1,7 @@
 "use client"
 
 import { MoneyReceive, MoneySend, WalletMoney, ThumbsUp } from "reicon-react"
+import { formatMoney } from "@/lib/currency"
 
 export function DashboardCards({
   ingresos,
@@ -18,7 +19,7 @@ export function DashboardCards({
       <div className="bg-white rounded-3xl border border-slate-200/60 shadow-[0_12px_30px_rgba(0,0,0,0.02)] p-6 flex items-start justify-between">
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ingresos del Mes</span>
-          <span className="text-3xl font-black text-slate-950">{currency}{ingresos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="text-3xl font-black text-slate-950">{currency}{formatMoney(ingresos)}</span>
         </div>
         <div className="p-3 bg-green-50 border border-green-200/30 rounded-2xl">
           <MoneyReceive size={24} color="#16a34a" />
@@ -28,7 +29,7 @@ export function DashboardCards({
       <div className="bg-white rounded-3xl border border-slate-200/60 shadow-[0_12px_30px_rgba(0,0,0,0.02)] p-6 flex items-start justify-between">
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Gastos del Mes</span>
-          <span className="text-3xl font-black text-slate-950">{currency}{gastos.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="text-3xl font-black text-slate-950">{currency}{formatMoney(gastos)}</span>
         </div>
         <div className="p-3 bg-red-50 border border-red-200/30 rounded-2xl">
           <MoneySend size={24} color="#dc2626" />
@@ -45,7 +46,7 @@ export function DashboardCards({
           <span className={`text-3xl font-black ${
             balance >= 0 ? "text-blue-600" : "text-red-600"
           }`}>
-            {currency}{balance.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {currency}{formatMoney(balance)}
           </span>
         </div>
         <div className={`p-3 rounded-2xl ${

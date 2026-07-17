@@ -4,10 +4,10 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { getAvailableBalance as calcAvailableBalance } from "@/lib/balance"
+import { amountToLempiras } from "@/lib/currency"
 
-function toLempiras(t: { amount: { toNumber(): number }; currency: string; exchangeRate?: { toNumber(): number } | null }): number {
-  const val = t.amount.toNumber()
-  return t.currency === "$" && t.exchangeRate ? val * t.exchangeRate.toNumber() : val
+function toLempiras(t: { amount: { toNumber(): number }; currency: string }): number {
+  return amountToLempiras(t.amount.toNumber(), t.currency)
 }
 
 export async function getEmergencyFundBalance() {

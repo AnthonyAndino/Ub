@@ -5,7 +5,7 @@ import { createWishlistItem, updateWishlistItem } from "@/lib/actions/wishlist"
 
 type Item = { id: string; name: string; estimatedPrice: number | null; priority: string; currency: string; exchangeRate: number | null }
 
-export function WishlistForm({ editItem, onDone, defaultRate = 25 }: { editItem?: Item | null; onDone?: () => void; defaultRate?: number }) {
+export function WishlistForm({ editItem, onDone, defaultRate = 26.75 }: { editItem?: Item | null; onDone?: () => void; defaultRate?: number }) {
   const action = editItem ? updateWishlistItem : createWishlistItem
   const [state, formAction, pending] = useActionState(action, null)
   const [wCurrency, setWCurrency] = useState(editItem?.currency ?? "L")

@@ -2,31 +2,27 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { listTransactions, deleteTransaction } from "@/lib/actions/transactions"
-import { fetchDefaultRate } from "@/lib/actions/currency"
+import { amountToLempiras, totalFromLempiras } from "@/lib/currency"
 import { Trash } from "reicon-react"
 import ConfirmDialog from "@/components/confirm-dialog"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
-function convertAmount(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
-  if (txCurrency === preferred) return amount
-  if (preferred === "L") return amount * (rate ?? defaultRate)
-  if (preferred === "$") return amount / (rate ?? defaultRate)
-  return amount
+function equivalentInCurrency(amount: number, txCurrency: string, preferred: string): number {
+  const enL = amountToLempiras(amount, txCurrency)
+  return totalFromLempiras(enL, preferred)
 }
 
 export function RecentTransactions({ prefCurrency = "L" }: { prefCurrency?: string }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const [defaultRate, setDefaultRate] = useState(25)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [txToDelete, setTxToDelete] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [data, rate] = await Promise.all([listTransactions(), fetchDefaultRate()])
+    const data = await listTransactions()
     setTransactions(data)
-    setDefaultRate(rate)
     setLoading(false)
   }, [])
 
@@ -86,9 +82,9 @@ export function RecentTransactions({ prefCurrency = "L" }: { prefCurrency?: stri
                 <span className={`text-sm font-black ${t.type === "income" ? "text-green-600" : "text-red-500"}`}>
                   {t.type === "income" ? "+" : "-"}{t.currency}{t.amount.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
-                {t.currency !== prefCurrency && t.exchangeRate != null && (
+                {t.currency !== prefCurrency && (
                   <span className="text-[10px] text-slate-400 font-semibold">
-                    ≈ {prefCurrency}{convertAmount(t.amount, t.currency, t.exchangeRate, prefCurrency, defaultRate).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ≈ {prefCurrency}{equivalentInCurrency(t.amount, t.currency, prefCurrency).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
               </div>

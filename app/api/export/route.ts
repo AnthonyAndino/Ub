@@ -4,7 +4,7 @@ import sharp from "sharp"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { rateLimit } from "@/lib/rate-limit"
-import { getDefaultRate } from "@/lib/currency"
+import { amountToLempiras, EXCHANGE_RATE, getDefaultRate, totalFromLempiras } from "@/lib/currency"
 import { sanitizeExcelCell } from "@/lib/sanitize"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 import { getGananciaNeta } from "@/lib/balance"
@@ -17,10 +17,8 @@ interface TxLike {
   exchangeRate: { toNumber(): number } | null
 }
 
-function toLempiras(t: TxLike, defaultRate: number): number {
-  const raw = t.amount.toNumber()
-  if (t.currency === "$") return raw * (t.exchangeRate?.toNumber() ?? defaultRate)
-  return raw
+function toLempiras(t: TxLike): number {
+  return amountToLempiras(t.amount.toNumber(), t.currency)
 }
 
 function sumByCurrency(txs: TxLike[], currency: "$" | "L"): number {
@@ -272,7 +270,6 @@ interface CategorySplit {
 
 function aggregateByCategory(
   txs: (TxLike & { category: string })[],
-  defaultRate: number,
 ): CategorySplit[] {
   const map = new Map<string, { usd: number; lps: number }>()
   txs.forEach((t) => {
@@ -285,9 +282,9 @@ function aggregateByCategory(
   return Array.from(map.entries())
     .map(([label, { usd, lps }]) => ({
       label,
-      usd: Math.round(usd * 100) / 100,
-      lps: Math.round(lps * 100) / 100,
-      valueL: Math.round((usd * defaultRate + lps) * 100) / 100,
+      usd,
+      lps,
+      valueL: usd * EXCHANGE_RATE + lps,
     }))
     .sort((a, b) => b.valueL - a.valueL)
     .map((cat, i) => ({
@@ -477,7 +474,7 @@ export async function GET(req: NextRequest) {
     orderBy: { date: "asc" },
   })
 
-  const defaultRate = await getDefaultRate()
+  await getDefaultRate()
 
   const incomes = transactions.filter((t) => isOperationalIncome(t.type, t.category))
   const expenses = transactions.filter((t) => isOperationalExpense(t.type, t.category))
@@ -487,20 +484,14 @@ export async function GET(req: NextRequest) {
   const expenseUsd = sumByCurrency(expenses, "$")
   const expenseLps = sumByCurrency(expenses, "L")
 
-  const totalIncomeL = incomes.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
-  const totalExpenseL = expenses.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
-  const balanceL = getGananciaNeta(transactions, (t) => toLempiras(t as TxLike, defaultRate))
-  const balanceUsd = getGananciaNeta(
-    transactions.filter((t) => t.currency === "$"),
-    (t) => t.amount.toNumber(),
-  )
-  const balanceLps = getGananciaNeta(
-    transactions.filter((t) => t.currency === "L"),
-    (t) => t.amount.toNumber(),
-  )
+  const totalIncomeL = incomes.reduce((s, t) => s + toLempiras(t), 0)
+  const totalExpenseL = expenses.reduce((s, t) => s + toLempiras(t), 0)
+  const balanceL = getGananciaNeta(transactions, (t) => toLempiras(t as TxLike))
+  const balanceUsd = totalFromLempiras(balanceL, "$")
+  const balanceLps = balanceL
 
-  const expenseCategories = aggregateByCategory(expenses, defaultRate)
-  const incomeCategories = aggregateByCategory(incomes, defaultRate)
+  const expenseCategories = aggregateByCategory(expenses)
+  const incomeCategories = aggregateByCategory(incomes)
 
   const monthName = new Date(year, monthNum - 1).toLocaleString("es-MX", {
     month: "long",
