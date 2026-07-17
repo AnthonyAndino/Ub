@@ -1,4 +1,4 @@
-/** Internal transfers — not real income or spending for P&L / ganancia neta */
+/** Internal transfers — not real income/spending, but they do affect cash available */
 export const TRANSFER_EXPENSE_CATEGORIES = new Set(["Ahorro", "Fondo Emergencia"])
 export const TRANSFER_INCOME_CATEGORIES = new Set(["Retiro Ahorro", "Retiro Fondo Emergencia"])
 

@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit"
 import { getDefaultRate } from "@/lib/currency"
 import { sanitizeExcelCell } from "@/lib/sanitize"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
+import { getGananciaNeta } from "@/lib/balance"
 
 // ─── HELPERS ─────────────────────────────────
 
@@ -488,9 +489,15 @@ export async function GET(req: NextRequest) {
 
   const totalIncomeL = incomes.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
   const totalExpenseL = expenses.reduce((s, t) => s + toLempiras(t, defaultRate), 0)
-  const balanceUsd = incomeUsd - expenseUsd
-  const balanceLps = incomeLps - expenseLps
-  const balanceL = totalIncomeL - totalExpenseL
+  const balanceL = getGananciaNeta(transactions, (t) => toLempiras(t as TxLike, defaultRate))
+  const balanceUsd = getGananciaNeta(
+    transactions.filter((t) => t.currency === "$"),
+    (t) => t.amount.toNumber(),
+  )
+  const balanceLps = getGananciaNeta(
+    transactions.filter((t) => t.currency === "L"),
+    (t) => t.amount.toNumber(),
+  )
 
   const expenseCategories = aggregateByCategory(expenses, defaultRate)
   const incomeCategories = aggregateByCategory(incomes, defaultRate)

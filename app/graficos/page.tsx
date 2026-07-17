@@ -6,6 +6,7 @@ import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
 import { getDefaultRate } from "@/lib/currency"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
+import { getGananciaNeta } from "@/lib/balance"
 
 function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
   if (txCurrency === preferred) return amount
@@ -109,14 +110,10 @@ export default async function GraficosPage() {
       select: { type: true, amount: true, currency: true, exchangeRate: true, category: true },
     })
 
-    let income = 0
-    let expense = 0
-    totals.forEach((t) => {
-      const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
-      if (isOperationalIncome(t.type, t.category)) income += monto
-      else if (isOperationalExpense(t.type, t.category)) expense += monto
-    })
-    accBalance += income - expense
+    const monthNet = getGananciaNeta(totals, (t) =>
+      convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate),
+    )
+    accBalance += monthNet
 
     balanceData.push({
       label: MONTHS_SHORT[m],
