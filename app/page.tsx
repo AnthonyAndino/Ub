@@ -8,7 +8,6 @@ import { getDefaultRate } from "@/lib/currency"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
-import { getGananciaNeta } from "@/lib/balance"
 
 function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
   if (txCurrency === preferred) return amount
@@ -55,9 +54,7 @@ export default async function Home() {
       gastosL += enL
     }
   })
-  const balance = getGananciaNeta(transaccionesMes, (t) =>
-    convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate),
-  )
+  const balance = ingresos - gastos
   const retorno = gastosL > 0 ? ingresosL / gastosL : ingresosL > 0 ? 1 : 0
 
   const metasLogradas = await prisma.wishlistItem.count({

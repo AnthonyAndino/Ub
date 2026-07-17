@@ -28,21 +28,23 @@ function sumBy(
   return transactions.filter(predicate).reduce((sum, t) => sum + amountOf(t), 0)
 }
 
-/** Real income (chamba, etc.) — excludes savings withdrawals */
+/** Ingresos reales del mes (excluye retiros de fondo/deseos) */
 export function sumOperationalIncome(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
   return sumBy(transactions, (t) => isOperationalIncome(t.type, t.category), amountOf)
 }
 
-/** Real spending (gas, food, etc.) — excludes savings deposits */
+/** Gastos reales del mes (excluye aportes a fondo/deseos) */
 export function sumOperationalExpense(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
   return sumBy(transactions, (t) => isOperationalExpense(t.type, t.category), amountOf)
 }
 
-/**
- * Cash left after real income/expenses and money locked in fondo/deseos.
- * Abonar reduces this; retirar increases it.
- */
+/** Ganancia neta del resumen mensual: solo ingresos y gastos reales */
 export function getGananciaNeta(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
+  return sumOperationalIncome(transactions, amountOf) - sumOperationalExpense(transactions, amountOf)
+}
+
+/** Efectivo libre para abonar (resta lo ya apartado en fondo y deseos) */
+export function getAvailableBalance(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
   const savingsOut = sumBy(
     transactions,
     (t) => t.type === "expense" && TRANSFER_EXPENSE_CATEGORIES.has(t.category),
@@ -54,10 +56,5 @@ export function getGananciaNeta(transactions: BalanceTx[], amountOf: AmountFn = 
     amountOf,
   )
 
-  return sumOperationalIncome(transactions, amountOf) - sumOperationalExpense(transactions, amountOf) - savingsOut + savingsIn
-}
-
-/** Same as ganancia neta — money available to spend or allocate */
-export function getAvailableBalance(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
-  return getGananciaNeta(transactions, amountOf)
+  return getGananciaNeta(transactions, amountOf) - savingsOut + savingsIn
 }
