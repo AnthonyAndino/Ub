@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
 import { getDefaultRate } from "@/lib/currency"
+import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 
 function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
   if (txCurrency === preferred) return amount
@@ -51,15 +52,15 @@ export default async function GraficosPage() {
 
     const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      select: { type: true, amount: true, currency: true, exchangeRate: true },
+      select: { type: true, amount: true, currency: true, exchangeRate: true, category: true },
     })
 
     let income = 0
     let expense = 0
     totals.forEach((t) => {
       const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
-      if (t.type === "income") income += monto
-      else expense += monto
+      if (isOperationalIncome(t.type, t.category)) income += monto
+      else if (isOperationalExpense(t.type, t.category)) expense += monto
     })
 
     monthlyData.push({
@@ -79,7 +80,9 @@ export default async function GraficosPage() {
   })
 
   const gastosPorCategoria: Record<string, number> = {}
-  monthExpenses.forEach((t) => {
+  monthExpenses
+    .filter((t) => isOperationalExpense(t.type, t.category))
+    .forEach((t) => {
     const cat = t.category.trim().toLowerCase()
     const catF = cat.charAt(0).toUpperCase() + cat.slice(1)
     const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
@@ -103,15 +106,15 @@ export default async function GraficosPage() {
 
     const totals = await prisma.transaction.findMany({
       where: { userId, deletedAt: null, date: { gte: start, lt: end } },
-      select: { type: true, amount: true, currency: true, exchangeRate: true },
+      select: { type: true, amount: true, currency: true, exchangeRate: true, category: true },
     })
 
     let income = 0
     let expense = 0
     totals.forEach((t) => {
       const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, preferredCurrency, defaultRate)
-      if (t.type === "income") income += monto
-      else expense += monto
+      if (isOperationalIncome(t.type, t.category)) income += monto
+      else if (isOperationalExpense(t.type, t.category)) expense += monto
     })
     accBalance += income - expense
 

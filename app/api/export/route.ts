@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma"
 import { rateLimit } from "@/lib/rate-limit"
 import { getDefaultRate } from "@/lib/currency"
 import { sanitizeExcelCell } from "@/lib/sanitize"
+import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 
 // ─── HELPERS ─────────────────────────────────
 
@@ -477,8 +478,8 @@ export async function GET(req: NextRequest) {
 
   const defaultRate = await getDefaultRate()
 
-  const incomes = transactions.filter((t) => t.type === "income")
-  const expenses = transactions.filter((t) => t.type === "expense")
+  const incomes = transactions.filter((t) => isOperationalIncome(t.type, t.category))
+  const expenses = transactions.filter((t) => isOperationalExpense(t.type, t.category))
 
   const incomeUsd = sumByCurrency(incomes, "$")
   const incomeLps = sumByCurrency(incomes, "L")

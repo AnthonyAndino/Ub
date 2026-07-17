@@ -7,6 +7,7 @@ import { EmergencyFundCard } from "@/components/emergency-fund-card"
 import { getDefaultRate } from "@/lib/currency"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
+import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 
 function convertToPreferred(amount: number, txCurrency: string, rate: number | null, preferred: string, defaultRate: number): number {
   if (txCurrency === preferred) return amount
@@ -44,11 +45,14 @@ export default async function Home() {
   let gastosL = 0
   transaccionesMes.forEach((t) => {
     const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
-    if (t.type === "income") ingresos += monto
-    else gastos += monto
     const enL = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, "L", defaultRate)
-    if (t.type === "income") ingresosL += enL
-    else gastosL += enL
+    if (isOperationalIncome(t.type, t.category)) {
+      ingresos += monto
+      ingresosL += enL
+    } else if (isOperationalExpense(t.type, t.category)) {
+      gastos += monto
+      gastosL += enL
+    }
   })
   const balance = ingresos - gastos
   const retorno = gastosL > 0 ? ingresosL / gastosL : ingresosL > 0 ? 1 : 0
@@ -69,9 +73,9 @@ export default async function Home() {
     let indiceSemana = Math.floor((dia - 1) / 7)
     if (indiceSemana > 3) indiceSemana = 3
     const monto = convertToPreferred(t.amount.toNumber(), t.currency, t.exchangeRate?.toNumber() ?? null, currency, defaultRate)
-    if (t.type === "income") {
+    if (isOperationalIncome(t.type, t.category)) {
       semanasData[indiceSemana].income += monto
-    } else {
+    } else if (isOperationalExpense(t.type, t.category)) {
       semanasData[indiceSemana].expense += monto
     }
   })
@@ -80,7 +84,7 @@ export default async function Home() {
 
   const gastosPorCategoria: Record<string, number> = {}
   transaccionesMes
-    .filter((t) => t.type === "expense")
+    .filter((t) => isOperationalExpense(t.type, t.category))
     .forEach((t) => {
       const cat = t.category.trim().toLowerCase()
       const catFormatted = cat.charAt(0).toUpperCase() + cat.slice(1)

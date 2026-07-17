@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { TRANSFER_EXPENSE_CATEGORIES, TRANSFER_INCOME_CATEGORIES } from "@/lib/transaction-categories"
 
 function toLempiras(t: { amount: { toNumber(): number }; currency: string; exchangeRate?: { toNumber(): number } | null }): number {
   const val = t.amount.toNumber()
@@ -67,11 +68,11 @@ export async function depositToEmergencyFund(amount: number) {
   })
 
   const totalIncome = allTransactions
-    .filter((t) => t.type === "income" && !["Retiro Ahorro", "Retiro Fondo Emergencia"].includes(t.category))
+    .filter((t) => t.type === "income" && !TRANSFER_INCOME_CATEGORIES.has(t.category))
     .reduce((sum, t) => sum + toLempiras(t), 0)
 
   const totalExpenses = allTransactions
-    .filter((t) => t.type === "expense" && !["Ahorro", "Fondo Emergencia"].includes(t.category))
+    .filter((t) => t.type === "expense" && !TRANSFER_EXPENSE_CATEGORIES.has(t.category))
     .reduce((sum, t) => sum + toLempiras(t), 0)
 
   const saldoDisponible = totalIncome - totalExpenses
