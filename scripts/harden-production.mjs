@@ -23,9 +23,46 @@ async function deleteDemoUser() {
 }
 
 async function rotateFamilyPasswords() {
+  const json = process.env.FAMILY_PASSWORDS_JSON
+  if (json) {
+    let map
+    try {
+      map = JSON.parse(json)
+    } catch {
+      console.error("  ✗ FAMILY_PASSWORDS_JSON no es JSON válido")
+      process.exit(1)
+    }
+
+    let updated = 0
+    for (const [email, password] of Object.entries(map)) {
+      if (!email.endsWith(FAMILY_DOMAIN)) {
+        console.log(`  · ${email} omitido (no es @cuentas.com)`)
+        continue
+      }
+      if (typeof password !== "string" || password.length < 10) {
+        console.error(`  ✗ Contraseña inválida para ${email} (mín. 10 caracteres)`)
+        process.exit(1)
+      }
+
+      const user = await prisma.user.findUnique({ where: { email } })
+      if (!user) {
+        console.log(`  · ${email} no encontrado — omitido`)
+        continue
+      }
+
+      const hashed = await bcrypt.hash(password, 12)
+      await prisma.user.update({ where: { email }, data: { password: hashed } })
+      console.log(`  ✓ Contraseña actualizada: ${email}`)
+      updated++
+    }
+
+    if (updated === 0) console.log("  · Ningún usuario @cuentas.com actualizado")
+    return
+  }
+
   const newPassword = process.env.FAMILY_NEW_PASSWORD
   if (!newPassword) {
-    console.log("  · FAMILY_NEW_PASSWORD no definida — contraseñas familiares sin cambiar")
+    console.log("  · Sin FAMILY_PASSWORDS_JSON ni FAMILY_NEW_PASSWORD — contraseñas sin cambiar")
     return
   }
 
@@ -50,7 +87,7 @@ async function rotateFamilyPasswords() {
     data: { password: hashed },
   })
 
-  console.log(`  ✓ Contraseña actualizada para ${familyUsers.length} usuario(s) @cuentas.com`)
+  console.log(`  ✓ Contraseña compartida actualizada para ${familyUsers.length} usuario(s) @cuentas.com`)
 }
 
 async function main() {

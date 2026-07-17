@@ -83,8 +83,9 @@ Crea el usuario `demo@test.com` solo en tu base de datos local.
      node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
      ```
 4. Al hacer deploy, las migraciones y el hardening de seguridad se aplican automáticamente (`vercel-build`)
-5. Para rotar contraseñas de usuarios `@cuentas.com` en un deploy, define temporalmente en Vercel:
-   - `FAMILY_NEW_PASSWORD` — contraseña nueva (mín. 10 caracteres, compártela solo con tu familia)
+5. Para contraseñas únicas por usuario `@cuentas.com`, define temporalmente en Vercel:
+   - `FAMILY_PASSWORDS_JSON` — JSON con email y contraseña por persona, ejemplo:
+     `{"uber@cuentas.com":"...","angeles@cuentas.com":"..."}`
    - Elimínala de Vercel después del deploy
 
 Para migrar manualmente contra producción:
