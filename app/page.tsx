@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { DashboardCards, EmptyCategory } from "@/components/dashboard-cards"
 import { EmergencyFundCard } from "@/components/emergency-fund-card"
-import { EXCHANGE_RATE, amountToLempiras, formatMoney, getDefaultRate, totalFromLempiras } from "@/lib/currency"
+import { amountToLempiras, formatMoney, getDefaultRate, totalFromLempiras } from "@/lib/currency"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
@@ -14,7 +14,7 @@ export default async function Home() {
   if (!session?.user?.id) redirect("/login")
 
   const userId = session.user.id
-  await getDefaultRate()
+  const exchangeRate = await getDefaultRate()
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { currency: true },
@@ -35,7 +35,7 @@ export default async function Home() {
   let ingresosL = 0
   let gastosL = 0
   transaccionesMes.forEach((t) => {
-    const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+    const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
     if (isOperationalIncome(t.type, t.category)) {
       ingresosL += enL
     } else if (isOperationalExpense(t.type, t.category)) {
@@ -44,9 +44,9 @@ export default async function Home() {
   })
 
   const balanceL = ingresosL - gastosL
-  const ingresos = totalFromLempiras(ingresosL, currency)
-  const gastos = totalFromLempiras(gastosL, currency)
-  const balance = totalFromLempiras(balanceL, currency)
+  const ingresos = totalFromLempiras(ingresosL, currency, exchangeRate)
+  const gastos = totalFromLempiras(gastosL, currency, exchangeRate)
+  const balance = totalFromLempiras(balanceL, currency, exchangeRate)
   const retorno = gastosL > 0 ? ingresosL / gastosL : ingresosL > 0 ? 1 : 0
 
   const metasLogradas = await prisma.wishlistItem.count({
@@ -64,7 +64,7 @@ export default async function Home() {
     const dia = new Date(t.date).getDate()
     let indiceSemana = Math.floor((dia - 1) / 7)
     if (indiceSemana > 3) indiceSemana = 3
-    const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+    const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
     if (isOperationalIncome(t.type, t.category)) {
       semanasData[indiceSemana].incomeL += enL
     } else if (isOperationalExpense(t.type, t.category)) {
@@ -74,8 +74,8 @@ export default async function Home() {
 
   const semanasDisplay = semanasData.map((d) => ({
     ...d,
-    income: totalFromLempiras(d.incomeL, currency),
-    expense: totalFromLempiras(d.expenseL, currency),
+    income: totalFromLempiras(d.incomeL, currency, exchangeRate),
+    expense: totalFromLempiras(d.expenseL, currency, exchangeRate),
   }))
 
   const maxSemanaVal = Math.max(...semanasDisplay.flatMap((d) => [d.income, d.expense]), 100)
@@ -86,12 +86,12 @@ export default async function Home() {
     .forEach((t) => {
       const cat = t.category.trim().toLowerCase()
       const catFormatted = cat.charAt(0).toUpperCase() + cat.slice(1)
-      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
       gastosPorCategoriaL[catFormatted] = (gastosPorCategoriaL[catFormatted] || 0) + enL
     })
 
   const categoriasGastos = Object.entries(gastosPorCategoriaL)
-    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, currency) }))
+    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, currency, exchangeRate) }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 4)
 
@@ -115,7 +115,7 @@ export default async function Home() {
             <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-bold text-slate-500 tracking-tight">
               <span className="text-emerald-600 font-black">$1</span>
               <span className="text-slate-300">/</span>
-              <span className="text-slate-600">L{EXCHANGE_RATE.toFixed(2)}</span>
+              <span className="text-slate-600">L{exchangeRate.toFixed(2)}</span>
             </div>
             <CurrencyToggle defaultCurrency={currency} />
             <ExportButton month={mesAnoUrl} />

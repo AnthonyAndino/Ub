@@ -3,26 +3,29 @@
 import { useEffect, useState, useCallback } from "react"
 import { listTransactions, deleteTransaction } from "@/lib/actions/transactions"
 import { amountToLempiras, totalFromLempiras } from "@/lib/currency"
+import { fetchDefaultRate } from "@/lib/actions/currency"
 import { Trash } from "reicon-react"
 import ConfirmDialog from "@/components/confirm-dialog"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
-function equivalentInCurrency(amount: number, txCurrency: string, preferred: string): number {
-  const enL = amountToLempiras(amount, txCurrency)
-  return totalFromLempiras(enL, preferred)
+function equivalentInCurrency(amount: number, txCurrency: string, preferred: string, rate: number): number {
+  const enL = amountToLempiras(amount, txCurrency, rate)
+  return totalFromLempiras(enL, preferred, rate)
 }
 
 export function RecentTransactions({ prefCurrency = "L" }: { prefCurrency?: string }) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [exchangeRate, setExchangeRate] = useState(26.75)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [txToDelete, setTxToDelete] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await listTransactions()
+    const [data, rate] = await Promise.all([listTransactions(), fetchDefaultRate()])
     setTransactions(data)
+    setExchangeRate(rate)
     setLoading(false)
   }, [])
 
@@ -84,7 +87,7 @@ export function RecentTransactions({ prefCurrency = "L" }: { prefCurrency?: stri
                 </span>
                 {t.currency !== prefCurrency && (
                   <span className="text-[10px] text-slate-400 font-semibold">
-                    ≈ {prefCurrency}{equivalentInCurrency(t.amount, t.currency, prefCurrency).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ≈ {prefCurrency}{equivalentInCurrency(t.amount, t.currency, prefCurrency, exchangeRate).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 )}
               </div>

@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-table"
 import { Trash2, Refresh, Trash, ChevronLeft, ChevronRight, ChevronExpandY, ArrowUp, ArrowDown, AlertTriangle } from "reicon-react"
 import { amountToLempiras, totalFromLempiras } from "@/lib/currency"
+import { fetchDefaultRate } from "@/lib/actions/currency"
 
 type Tx = Awaited<ReturnType<typeof listTrashedTransactions>>[number]
 
@@ -34,12 +35,14 @@ export default function PapeleraPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState("all")
   const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7))
+  const [exchangeRate, setExchangeRate] = useState(26.75)
   const prefCurrency = session?.user?.currency ?? "L"
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await listTrashedTransactions()
+    const [data, rate] = await Promise.all([listTrashedTransactions(), fetchDefaultRate()])
     setTransactions(data)
+    setExchangeRate(rate)
     setLoading(false)
   }, [])
 
@@ -115,7 +118,7 @@ export default function PapeleraPage() {
         const txCurrency = row.currency ?? "L"
         const converted = txCurrency === prefCurrency
           ? amount
-          : totalFromLempiras(amountToLempiras(amount, txCurrency), prefCurrency)
+          : totalFromLempiras(amountToLempiras(amount, txCurrency, exchangeRate), prefCurrency, exchangeRate)
         const displayCurrency = prefCurrency === "$" && txCurrency === "L" ? "~$" : prefCurrency === "L" && txCurrency === "$" ? "~L" : prefCurrency
         return (
           <span className={`font-extrabold tabular-nums ${row.type === "income" ? "text-green-600" : "text-red-500"}`}>
@@ -156,7 +159,7 @@ export default function PapeleraPage() {
         </div>
       ),
     }),
-  ], [prefCurrency, columnHelper])
+  ], [prefCurrency, exchangeRate, columnHelper])
 
   const globalFilter = useMemo(() => search, [search])
 

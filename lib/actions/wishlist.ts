@@ -5,6 +5,7 @@ import { z } from "zod"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { getAvailableBalance as calcAvailableBalance } from "@/lib/balance"
+import { amountToLempiras, getDefaultRate } from "@/lib/currency"
 import {
   calcWishlistSavedAmount,
   recordWishlistPurchase,
@@ -143,8 +144,9 @@ export async function togglePurchased(id: string) {
   if (item.userId !== session.user.id) return { error: "No autorizado" }
 
   if (!item.purchased) {
+    const rate = await getDefaultRate()
     const purchaseAmount =
-      item.estimatedPrice?.toNumber() ?? calcWishlistSavedAmount(item.transactions)
+      item.estimatedPrice?.toNumber() ?? calcWishlistSavedAmount(item.transactions, rate)
 
     if (purchaseAmount > 0) {
       await recordWishlistPurchase({
@@ -213,11 +215,14 @@ export async function addFundsToWishlist(id: string, amount: number) {
   if (item.userId !== session.user.id) return { error: "No autorizado" }
 
   // Verificar saldo disponible del usuario (excluye ahorros/retiros de deseos)
+  const rate = await getDefaultRate()
   const allTransactions = await prisma.transaction.findMany({
     where: { userId: session.user.id, deletedAt: null },
   })
 
-  const saldoDisponible = calcAvailableBalance(allTransactions)
+  const saldoDisponible = calcAvailableBalance(allTransactions, (t) =>
+    amountToLempiras(t.amount.toNumber(), t.currency, rate),
+  )
 
   if (amount > saldoDisponible) {
     return {
@@ -392,9 +397,12 @@ export async function getAvailableBalance() {
   const session = await auth()
   if (!session?.user?.id) return 0
 
+  const rate = await getDefaultRate()
   const allTransactions = await prisma.transaction.findMany({
     where: { userId: session.user.id, deletedAt: null },
   })
 
-  return calcAvailableBalance(allTransactions)
+  return calcAvailableBalance(allTransactions, (t) =>
+    amountToLempiras(t.amount.toNumber(), t.currency, rate),
+  )
 }

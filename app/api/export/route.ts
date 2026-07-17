@@ -4,7 +4,7 @@ import sharp from "sharp"
 import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { rateLimit } from "@/lib/rate-limit"
-import { amountToLempiras, EXCHANGE_RATE, getDefaultRate, totalFromLempiras } from "@/lib/currency"
+import { amountToLempiras, getDefaultRate, totalFromLempiras } from "@/lib/currency"
 import { sanitizeExcelCell } from "@/lib/sanitize"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 import { getGananciaNeta } from "@/lib/balance"
@@ -17,8 +17,8 @@ interface TxLike {
   exchangeRate: { toNumber(): number } | null
 }
 
-function toLempiras(t: TxLike): number {
-  return amountToLempiras(t.amount.toNumber(), t.currency)
+function toLempirasAt(t: TxLike, rate: number): number {
+  return amountToLempiras(t.amount.toNumber(), t.currency, rate)
 }
 
 function sumByCurrency(txs: TxLike[], currency: "$" | "L"): number {
@@ -270,6 +270,7 @@ interface CategorySplit {
 
 function aggregateByCategory(
   txs: (TxLike & { category: string })[],
+  rate: number,
 ): CategorySplit[] {
   const map = new Map<string, { usd: number; lps: number }>()
   txs.forEach((t) => {
@@ -284,7 +285,7 @@ function aggregateByCategory(
       label,
       usd,
       lps,
-      valueL: usd * EXCHANGE_RATE + lps,
+      valueL: usd * rate + lps,
     }))
     .sort((a, b) => b.valueL - a.valueL)
     .map((cat, i) => ({
@@ -474,7 +475,7 @@ export async function GET(req: NextRequest) {
     orderBy: { date: "asc" },
   })
 
-  await getDefaultRate()
+  const exchangeRate = await getDefaultRate()
 
   const incomes = transactions.filter((t) => isOperationalIncome(t.type, t.category))
   const expenses = transactions.filter((t) => isOperationalExpense(t.type, t.category))
@@ -484,14 +485,14 @@ export async function GET(req: NextRequest) {
   const expenseUsd = sumByCurrency(expenses, "$")
   const expenseLps = sumByCurrency(expenses, "L")
 
-  const totalIncomeL = incomes.reduce((s, t) => s + toLempiras(t), 0)
-  const totalExpenseL = expenses.reduce((s, t) => s + toLempiras(t), 0)
-  const balanceL = getGananciaNeta(transactions, (t) => toLempiras(t as TxLike))
-  const balanceUsd = totalFromLempiras(balanceL, "$")
+  const totalIncomeL = incomes.reduce((s, t) => s + toLempirasAt(t, exchangeRate), 0)
+  const totalExpenseL = expenses.reduce((s, t) => s + toLempirasAt(t, exchangeRate), 0)
+  const balanceL = getGananciaNeta(transactions, (t) => toLempirasAt(t as TxLike, exchangeRate))
+  const balanceUsd = totalFromLempiras(balanceL, "$", exchangeRate)
   const balanceLps = balanceL
 
-  const expenseCategories = aggregateByCategory(expenses)
-  const incomeCategories = aggregateByCategory(incomes)
+  const expenseCategories = aggregateByCategory(expenses, exchangeRate)
+  const incomeCategories = aggregateByCategory(incomes, exchangeRate)
 
   const monthName = new Date(year, monthNum - 1).toLocaleString("es-MX", {
     month: "long",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { listTransactions, deleteTransaction } from "@/lib/actions/transactions"
 import { Trash, DocumentText2 } from "reicon-react"
 import { amountToLempiras, totalFromLempiras } from "@/lib/currency"
+import { fetchDefaultRate } from "@/lib/actions/currency"
 
 type Transaction = Awaited<ReturnType<typeof listTransactions>>[number]
 
@@ -12,11 +13,13 @@ export function TransactionList({ currency = "L" }: { currency?: string }) {
   const router = useRouter()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [exchangeRate, setExchangeRate] = useState(26.75)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const data = await listTransactions()
+    const [data, rate] = await Promise.all([listTransactions(), fetchDefaultRate()])
     setTransactions(data)
+    setExchangeRate(rate)
     setLoading(false)
   }, [])
 
@@ -110,7 +113,7 @@ export function TransactionList({ currency = "L" }: { currency?: string }) {
                 {t.currency !== currency && (
                   <span className="text-[10px] text-slate-400 font-medium ml-1">
                     (~{currency}
-                    {totalFromLempiras(amountToLempiras(t.amount, t.currency), currency).toLocaleString("es-MX", { minimumFractionDigits: 0 })})
+                    {totalFromLempiras(amountToLempiras(t.amount, t.currency, exchangeRate), currency, exchangeRate).toLocaleString("es-MX", { minimumFractionDigits: 0 })})
                   </span>
                 )}
               </span>

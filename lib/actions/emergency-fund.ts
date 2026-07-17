@@ -4,27 +4,24 @@ import { auth } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { getAvailableBalance as calcAvailableBalance } from "@/lib/balance"
-import { amountToLempiras } from "@/lib/currency"
-
-function toLempiras(t: { amount: { toNumber(): number }; currency: string }): number {
-  return amountToLempiras(t.amount.toNumber(), t.currency)
-}
+import { amountToLempiras, getDefaultRate } from "@/lib/currency"
 
 export async function getEmergencyFundBalance() {
   const session = await auth()
   if (!session?.user?.id) return 0
 
+  const rate = await getDefaultRate()
   const tx = await prisma.transaction.findMany({
     where: { userId: session.user.id, deletedAt: null },
   })
 
   const deposits = tx
     .filter((t) => t.type === "expense" && t.category === "Fondo Emergencia")
-    .reduce((sum, t) => sum + toLempiras(t), 0)
+    .reduce((sum, t) => sum + amountToLempiras(t.amount.toNumber(), t.currency, rate), 0)
 
   const withdrawals = tx
     .filter((t) => t.type === "income" && t.category === "Retiro Fondo Emergencia")
-    .reduce((sum, t) => sum + toLempiras(t), 0)
+    .reduce((sum, t) => sum + amountToLempiras(t.amount.toNumber(), t.currency, rate), 0)
 
   return deposits - withdrawals
 }
@@ -63,11 +60,14 @@ export async function depositToEmergencyFund(amount: number) {
 
   if (amount <= 0) return { error: "El monto debe ser mayor a cero" }
 
+  const rate = await getDefaultRate()
   const allTransactions = await prisma.transaction.findMany({
     where: { userId: session.user.id, deletedAt: null },
   })
 
-  const saldoDisponible = calcAvailableBalance(allTransactions)
+  const saldoDisponible = calcAvailableBalance(allTransactions, (t) =>
+    amountToLempiras(t.amount.toNumber(), t.currency, rate),
+  )
 
   if (amount > saldoDisponible) {
     return {

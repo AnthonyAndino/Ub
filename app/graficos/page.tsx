@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma"
 import { Sidebar } from "@/components/sidebar"
 import { ExportButton } from "@/components/export-button"
 import { CurrencyToggle } from "@/components/currency-toggle"
-import { amountToLempiras, formatMoney, totalFromLempiras } from "@/lib/currency"
+import { amountToLempiras, formatMoney, getDefaultRate, totalFromLempiras } from "@/lib/currency"
 import { isOperationalExpense, isOperationalIncome } from "@/lib/transaction-categories"
 import { getGananciaNeta } from "@/lib/balance"
 
@@ -30,6 +30,7 @@ export default async function GraficosPage() {
     select: { currency: true },
   })
   const preferredCurrency = userPref?.currency ?? "L"
+  const exchangeRate = await getDefaultRate()
 
   // ── 1. Monthly Evolution (last 6 months) ──
   const monthlyData: { label: string; income: number; expense: number }[] = []
@@ -47,15 +48,15 @@ export default async function GraficosPage() {
     let incomeL = 0
     let expenseL = 0
     totals.forEach((t) => {
-      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
       if (isOperationalIncome(t.type, t.category)) incomeL += enL
       else if (isOperationalExpense(t.type, t.category)) expenseL += enL
     })
 
     monthlyData.push({
       label: MONTHS_SHORT[m],
-      income: totalFromLempiras(incomeL, preferredCurrency),
-      expense: totalFromLempiras(expenseL, preferredCurrency),
+      income: totalFromLempiras(incomeL, preferredCurrency, exchangeRate),
+      expense: totalFromLempiras(expenseL, preferredCurrency, exchangeRate),
     })
   }
 
@@ -74,12 +75,12 @@ export default async function GraficosPage() {
     .forEach((t) => {
       const cat = t.category.trim().toLowerCase()
       const catF = cat.charAt(0).toUpperCase() + cat.slice(1)
-      const enL = amountToLempiras(t.amount.toNumber(), t.currency)
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
       gastosPorCategoriaL[catF] = (gastosPorCategoriaL[catF] || 0) + enL
     })
 
   const categorias = Object.entries(gastosPorCategoriaL)
-    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, preferredCurrency) }))
+    .map(([name, valueL]) => ({ name, value: totalFromLempiras(valueL, preferredCurrency, exchangeRate) }))
     .sort((a, b) => b.value - a.value)
 
   const totalGastos = categorias.reduce((s, c) => s + c.value, 0)
@@ -98,11 +99,13 @@ export default async function GraficosPage() {
       select: { type: true, amount: true, currency: true, category: true },
     })
 
-    accBalanceL += getGananciaNeta(totals)
+    accBalanceL += getGananciaNeta(totals, (t) =>
+      amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate),
+    )
 
     balanceData.push({
       label: MONTHS_SHORT[m],
-      balance: totalFromLempiras(accBalanceL, preferredCurrency),
+      balance: totalFromLempiras(accBalanceL, preferredCurrency, exchangeRate),
     })
   }
 

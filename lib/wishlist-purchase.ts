@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma"
 import { WISHLIST_PURCHASE_CATEGORY } from "@/lib/transaction-categories"
-import { amountToLempiras } from "@/lib/currency"
+import { amountToLempiras, getDefaultRate } from "@/lib/currency"
 
 export type WishlistItemTx = {
   type: string
@@ -10,18 +10,14 @@ export type WishlistItemTx = {
   category: string
 }
 
-function toLempiras(t: WishlistItemTx): number {
-  return amountToLempiras(t.amount.toNumber(), t.currency)
-}
-
-export function calcWishlistSavedAmount(transactions: WishlistItemTx[]): number {
+export function calcWishlistSavedAmount(transactions: WishlistItemTx[], rate: number): number {
   const aportado = transactions
     .filter((t) => t.type === "expense" && t.category === "Ahorro")
-    .reduce((sum, t) => sum + toLempiras(t), 0)
+    .reduce((sum, t) => sum + amountToLempiras(t.amount.toNumber(), t.currency, rate), 0)
 
   const retirado = transactions
     .filter((t) => t.type === "income" && t.category === "Retiro Ahorro")
-    .reduce((sum, t) => sum + toLempiras(t), 0)
+    .reduce((sum, t) => sum + amountToLempiras(t.amount.toNumber(), t.currency, rate), 0)
 
   return Math.max(0, aportado - retirado)
 }
@@ -54,8 +50,9 @@ export async function recordWishlistPurchase({
   skipPurchaseExpense?: boolean
   existingTransactions?: WishlistItemTx[]
 }) {
-  const savedAmount = calcWishlistSavedAmount(existingTransactions)
-  const purchaseInL = amountToLempiras(purchaseAmount, currency)
+  const rate = await getDefaultRate()
+  const savedAmount = calcWishlistSavedAmount(existingTransactions, rate)
+  const purchaseInL = amountToLempiras(purchaseAmount, currency, rate)
   const releaseAmount = Math.min(savedAmount, purchaseInL)
 
   if (!skipPurchaseExpense && !hasWishlistPurchaseExpense(existingTransactions)) {
@@ -69,7 +66,7 @@ export async function recordWishlistPurchase({
         userId,
         wishlistItemId: itemId,
         currency,
-        exchangeRate,
+        exchangeRate: exchangeRate ?? rate,
       },
     })
   }

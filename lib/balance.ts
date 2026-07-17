@@ -14,8 +14,8 @@ export interface BalanceTx {
   category: string
 }
 
-export function toLempiras(t: BalanceTx): number {
-  return amountToLempiras(t.amount.toNumber(), t.currency)
+export function toLempiras(t: BalanceTx, rate: number): number {
+  return amountToLempiras(t.amount.toNumber(), t.currency, rate)
 }
 
 type AmountFn = (t: BalanceTx) => number
@@ -23,28 +23,28 @@ type AmountFn = (t: BalanceTx) => number
 function sumBy(
   transactions: BalanceTx[],
   predicate: (t: BalanceTx) => boolean,
-  amountOf: AmountFn = toLempiras,
+  amountOf: AmountFn,
 ): number {
   return transactions.filter(predicate).reduce((sum, t) => sum + amountOf(t), 0)
 }
 
 /** Ingresos reales del mes (excluye retiros de fondo/deseos) */
-export function sumOperationalIncome(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
+export function sumOperationalIncome(transactions: BalanceTx[], amountOf: AmountFn): number {
   return sumBy(transactions, (t) => isOperationalIncome(t.type, t.category), amountOf)
 }
 
 /** Gastos reales del mes (excluye aportes a fondo/deseos) */
-export function sumOperationalExpense(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
+export function sumOperationalExpense(transactions: BalanceTx[], amountOf: AmountFn): number {
   return sumBy(transactions, (t) => isOperationalExpense(t.type, t.category), amountOf)
 }
 
 /** Ganancia neta del resumen mensual: solo ingresos y gastos reales */
-export function getGananciaNeta(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
+export function getGananciaNeta(transactions: BalanceTx[], amountOf: AmountFn): number {
   return sumOperationalIncome(transactions, amountOf) - sumOperationalExpense(transactions, amountOf)
 }
 
 /** Efectivo libre para abonar (resta lo ya apartado en fondo y deseos) */
-export function getAvailableBalance(transactions: BalanceTx[], amountOf: AmountFn = toLempiras): number {
+export function getAvailableBalance(transactions: BalanceTx[], amountOf: AmountFn): number {
   const savingsOut = sumBy(
     transactions,
     (t) => t.type === "expense" && TRANSFER_EXPENSE_CATEGORIES.has(t.category),
