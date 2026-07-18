@@ -95,7 +95,7 @@ function categoryAmountLabel(cat: CategorySplit): string {
 }
 
 /** Donut chart with category labels and legend baked into the image */
-function generateDonutSVG(categories: CategorySplit[]): string {
+function generateDonutSVG(categories: CategorySplit[], title: string = "Gastos por categoría"): string {
   const width = 520
   const height = Math.max(300, 56 + categories.length * 28)
   const cx = 155
@@ -108,7 +108,8 @@ function generateDonutSVG(categories: CategorySplit[]): string {
   if (total === 0) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <rect width="${width}" height="${height}" fill="white" rx="8"/>
-      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" fill="#94A3B8">Sin gastos este mes</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" fill="#94A3B8">Sin datos este mes</text>
     </svg>`
   }
 
@@ -122,21 +123,42 @@ function generateDonutSVG(categories: CategorySplit[]): string {
 
     const startAngle = currentAngle
     const endAngle = currentAngle + sliceAngle
-    const outerStart = polarToCartesian(cx, cy, outerR, startAngle)
-    const outerEnd = polarToCartesian(cx, cy, outerR, endAngle)
-    const innerStart = polarToCartesian(cx, cy, innerR, endAngle)
-    const innerEnd = polarToCartesian(cx, cy, innerR, startAngle)
-    const largeArc = sliceAngle > Math.PI ? 1 : 0
 
-    const d = [
-      `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
-      `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
-      `L ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
-      `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
-      `Z`,
-    ].join(" ")
+    // Fix: SVG arcs with identical start/end points (full circle) draw nothing.
+    // Split into two half-arcs when a single slice is >= 99.5% of the total.
+    if (sliceAngle > Math.PI * 2 - 0.01) {
+      const midAngle = startAngle + Math.PI
+      const outerStart = polarToCartesian(cx, cy, outerR, startAngle)
+      const outerMid = polarToCartesian(cx, cy, outerR, midAngle)
+      const innerMid = polarToCartesian(cx, cy, innerR, midAngle)
+      const innerEnd = polarToCartesian(cx, cy, innerR, startAngle)
 
-    paths.push(`<path d="${d}" fill="${seg.color}" />`)
+      const d = [
+        `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
+        `A ${outerR} ${outerR} 0 1 1 ${outerMid.x.toFixed(2)} ${outerMid.y.toFixed(2)}`,
+        `A ${outerR} ${outerR} 0 1 1 ${outerStart.x.toFixed(2)} ${(outerStart.y + 0.01).toFixed(2)}`,
+        `L ${innerEnd.x.toFixed(2)} ${(innerEnd.y + 0.01).toFixed(2)}`,
+        `A ${innerR} ${innerR} 0 1 0 ${innerMid.x.toFixed(2)} ${innerMid.y.toFixed(2)}`,
+        `A ${innerR} ${innerR} 0 1 0 ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
+        `Z`,
+      ].join(" ")
+      paths.push(`<path d="${d}" fill="${seg.color}" />`)
+    } else {
+      const outerStart = polarToCartesian(cx, cy, outerR, startAngle)
+      const outerEnd = polarToCartesian(cx, cy, outerR, endAngle)
+      const innerStart = polarToCartesian(cx, cy, innerR, endAngle)
+      const innerEnd = polarToCartesian(cx, cy, innerR, startAngle)
+      const largeArc = sliceAngle > Math.PI ? 1 : 0
+
+      const d = [
+        `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
+        `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
+        `L ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
+        `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
+        `Z`,
+      ].join(" ")
+      paths.push(`<path d="${d}" fill="${seg.color}" />`)
+    }
 
     const pct = (seg.value / total) * 100
     if (pct >= 8) {
@@ -167,7 +189,7 @@ function generateDonutSVG(categories: CategorySplit[]): string {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${legendX}" y="22" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#0F172A">Gastos por categoría</text>
+    <text x="${legendX}" y="22" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
     ${paths.join("\n")}
     <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="white" />
     ${sliceLabels.join("\n")}
@@ -178,6 +200,7 @@ function generateDonutSVG(categories: CategorySplit[]): string {
 /** Bar chart with value and category labels inside the image */
 function generateBarChartSVG(
   data: { label: string; value: number; color: string; fmt?: string }[],
+  title: string = "Ingresos vs Gastos",
 ): string {
   const width = 480
   const height = 300
@@ -216,10 +239,139 @@ function generateBarChartSVG(
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">Ingresos vs Gastos</text>
+    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
     ${gridLines.join("\n")}
     <line x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" stroke="#CBD5E1" stroke-width="1" />
     ${barsAndLabels.join("\n")}
+  </svg>`
+}
+
+/** Grouped bar chart for monthly evolution (income vs expense per month) */
+function generateMonthlyEvolutionSVG(
+  data: { label: string; income: number; expense: number }[],
+  title: string = "Evolución Mensual",
+  currencySymbol: string = "L",
+): string {
+  const width = 580
+  const height = 320
+  const chartLeft = 55
+  const chartRight = width - 30
+  const chartTop = 55
+  const chartBottom = height - 55
+  const chartHeight = chartBottom - chartTop
+  const maxValue = Math.max(...data.flatMap((d) => [d.income, d.expense]), 1)
+  const groupWidth = (chartRight - chartLeft) / data.length
+  const barWidth = Math.min(30, groupWidth * 0.3)
+  const barGap = 4
+
+  const gridLines: string[] = []
+  for (let i = 0; i <= 4; i++) {
+    const y = chartBottom - (i / 4) * chartHeight
+    const val = Math.round((i / 4) * maxValue)
+    gridLines.push(`<line x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}" stroke="#E2E8F0" stroke-width="1" />`)
+    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
+  }
+
+  const bars = data.map((d, i) => {
+    const groupCx = chartLeft + groupWidth * i + groupWidth / 2
+    const x1 = groupCx - barWidth - barGap / 2
+    const x2 = groupCx + barGap / 2
+    const hIncome = d.income > 0 ? Math.max(4, (d.income / maxValue) * chartHeight) : 2
+    const hExpense = d.expense > 0 ? Math.max(4, (d.expense / maxValue) * chartHeight) : 2
+    const yIncome = chartBottom - hIncome
+    const yExpense = chartBottom - hExpense
+    const incLabel = d.income > 0 ? `${currencySymbol}${Math.round(d.income).toLocaleString("en-US")}` : ""
+    const expLabel = d.expense > 0 ? `${currencySymbol}${Math.round(d.expense).toLocaleString("en-US")}` : ""
+
+    return `
+      <rect x="${x1}" y="${yIncome}" width="${barWidth}" height="${hIncome}" fill="#10B981" rx="4" />
+      <rect x="${x2}" y="${yExpense}" width="${barWidth}" height="${hExpense}" fill="#EF4444" rx="4" />
+      <text x="${x1 + barWidth / 2}" y="${yIncome - 6}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="8" font-weight="bold" fill="#059669">${escapeXml(incLabel)}</text>
+      <text x="${x2 + barWidth / 2}" y="${yExpense - 6}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="8" font-weight="bold" fill="#DC2626">${escapeXml(expLabel)}</text>
+      <text x="${groupCx}" y="${chartBottom + 20}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
+    `
+  })
+
+  // Legend
+  const legendX = width / 2 - 80
+  const legendY = height - 12
+  const legend = `
+    <rect x="${legendX}" y="${legendY - 8}" width="10" height="10" rx="2" fill="#10B981" />
+    <text x="${legendX + 14}" y="${legendY}" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#334155">Ingresos</text>
+    <rect x="${legendX + 80}" y="${legendY - 8}" width="10" height="10" rx="2" fill="#EF4444" />
+    <text x="${legendX + 94}" y="${legendY}" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#334155">Gastos</text>
+  `
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" fill="white" rx="8" />
+    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${width / 2}" y="44" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#94A3B8">Últimos 6 meses</text>
+    ${gridLines.join("\n")}
+    <line x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" stroke="#CBD5E1" stroke-width="1" />
+    ${bars.join("\n")}
+    ${legend}
+  </svg>`
+}
+
+/** Line chart for accumulated balance over time */
+function generateBalanceLineSVG(
+  data: { label: string; balance: number }[],
+  title: string = "Balance Acumulado",
+  currencySymbol: string = "L",
+): string {
+  const width = 520
+  const height = 300
+  const chartLeft = 60
+  const chartRight = width - 30
+  const chartTop = 55
+  const chartBottom = height - 45
+  const chartHeight = chartBottom - chartTop
+
+  const values = data.map((d) => d.balance)
+  const maxVal = Math.max(...values, 100)
+  const minVal = Math.min(...values, 0)
+  const range = maxVal - minVal || 1
+
+  const gridLines: string[] = []
+  for (let i = 0; i <= 4; i++) {
+    const y = chartBottom - (i / 4) * chartHeight
+    const val = Math.round(minVal + (i / 4) * range)
+    gridLines.push(`<line x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}" stroke="#E2E8F0" stroke-width="1" />`)
+    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
+  }
+
+  const points = data.map((d, i) => {
+    const x = chartLeft + 20 + i * ((chartRight - chartLeft - 40) / Math.max(data.length - 1, 1))
+    const y = chartBottom - ((d.balance - minVal) / range) * chartHeight
+    return { x, y, label: d.label, val: d.balance }
+  })
+
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")
+  const areaD = pathD + ` L${points[points.length - 1].x.toFixed(1)},${chartBottom} L${points[0].x.toFixed(1)},${chartBottom} Z`
+
+  const pointElements = points.map((p) => {
+    const label = `${currencySymbol}${Math.round(p.val).toLocaleString("en-US")}`
+    return `
+      <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="#2563EB" stroke="white" stroke-width="2" />
+      <text x="${p.x.toFixed(1)}" y="${(p.y - 10).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="9" font-weight="bold" fill="#0F172A">${escapeXml(label)}</text>
+      <text x="${p.x.toFixed(1)}" y="${chartBottom + 18}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(p.label)}</text>
+    `
+  })
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="${width}" height="${height}" fill="white" rx="8" />
+    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${width / 2}" y="44" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#94A3B8">Evolución del balance mes a mes</text>
+    <defs>
+      <linearGradient id="balGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#2563EB" stop-opacity="0.2" />
+        <stop offset="100%" stop-color="#2563EB" stop-opacity="0" />
+      </linearGradient>
+    </defs>
+    ${gridLines.join("\n")}
+    <path d="${areaD}" fill="url(#balGrad)" />
+    <path d="${pathD}" stroke="#2563EB" stroke-width="3" fill="none" />
+    ${pointElements.join("\n")}
   </svg>`
 }
 
@@ -500,20 +652,70 @@ export async function GET(req: NextRequest) {
     year: "numeric",
   })
 
+  // ── Monthly evolution data (last 6 months) ──
+  const MONTHS_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+  const monthlyData: { label: string; income: number; expense: number }[] = []
+  for (let i = 5; i >= 0; i--) {
+    let m = monthNum - 1 - i
+    let y = year
+    if (m < 0) { m += 12; y-- }
+    const mStart = new Date(y, m, 1)
+    const mEnd = new Date(y, m + 1, 1)
+
+    const mTxs = await prisma.transaction.findMany({
+      where: { userId: session.user.id, deletedAt: null, date: { gte: mStart, lt: mEnd } },
+      select: { type: true, amount: true, currency: true, category: true },
+    })
+
+    let incL = 0
+    let expL = 0
+    mTxs.forEach((t) => {
+      const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
+      if (isOperationalIncome(t.type, t.category)) incL += enL
+      else if (isOperationalExpense(t.type, t.category)) expL += enL
+    })
+    monthlyData.push({ label: MONTHS_SHORT[m], income: incL, expense: expL })
+  }
+
+  // ── Accumulated balance data (last 6 months) ──
+  let accBalanceL = 0
+  const balanceData: { label: string; balance: number }[] = []
+  for (let i = 5; i >= 0; i--) {
+    let m = monthNum - 1 - i
+    let y = year
+    if (m < 0) { m += 12; y-- }
+    const mStart = new Date(y, m, 1)
+    const mEnd = new Date(y, m + 1, 1)
+
+    const mTxs = await prisma.transaction.findMany({
+      where: { userId: session.user.id, deletedAt: null, date: { gte: mStart, lt: mEnd } },
+      select: { type: true, amount: true, currency: true, category: true },
+    })
+
+    accBalanceL += getGananciaNeta(mTxs, (t) =>
+      amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate),
+    )
+    balanceData.push({ label: MONTHS_SHORT[m], balance: accBalanceL })
+  }
+
   const donutRowSpan = Math.max(16, Math.ceil(expenseCategories.length * 1.4) + 4)
   const barRowSpan = 16
+  const evolutionRowSpan = 17
+  const balanceRowSpan = 16
 
   // ─── GENERATE CHART IMAGES (labels baked into PNG) ────
-  const [donutPng, barPng] = await Promise.all([
-    svgToPng(generateDonutSVG(expenseCategories)),
+  const [donutPng, barPng, evolutionPng, balancePng] = await Promise.all([
+    svgToPng(generateDonutSVG(expenseCategories, "Gastos por Categoría")),
     svgToPng(
       generateBarChartSVG([
         { label: "Ingresos USD", value: incomeUsd, color: "#059669", fmt: "usd" },
         { label: "Ingresos LPS", value: incomeLps, color: "#10B981", fmt: "lps" },
         { label: "Gastos USD", value: expenseUsd, color: "#DC2626", fmt: "usd" },
         { label: "Gastos LPS", value: expenseLps, color: "#EF4444", fmt: "lps" },
-      ]),
+      ], "Ingresos vs Gastos del Mes"),
     ),
+    svgToPng(generateMonthlyEvolutionSVG(monthlyData, "Evolución Mensual", "L")),
+    svgToPng(generateBalanceLineSVG(balanceData, "Balance Acumulado", "L")),
   ])
 
   // ─── CREATE WORKBOOK ────────────────────────
@@ -623,6 +825,17 @@ export async function GET(req: NextRequest) {
   })
   row += 5 // after metrics + blank
 
+  // ── Section: Evolución Mensual (grouped bar chart) ──
+  ws.mergeCells(`B${row}:H${row}`)
+  ws.getCell(`B${row}`).value = "Evolución Mensual"
+  ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: "FF0F172A" }, name: "Calibri" }
+  ws.getRow(row).height = 28
+  row++
+
+  const evolutionRow = row
+  placeChartImage(ws, wb, evolutionPng, evolutionRow, evolutionRowSpan)
+  row += evolutionRowSpan + 1
+
   // ── Section: Gastos por Categoría (donut image with inline labels) ──
   ws.mergeCells(`B${row}:H${row}`)
   ws.getCell(`B${row}`).value = "Gastos por Categoría"
@@ -636,7 +849,7 @@ export async function GET(req: NextRequest) {
 
   // ── Section: Ingresos vs Gastos (bar chart with inline labels) ──
   ws.mergeCells(`B${row}:H${row}`)
-  ws.getCell(`B${row}`).value = "Ingresos vs Gastos"
+  ws.getCell(`B${row}`).value = "Ingresos vs Gastos del Mes"
   ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: "FF0F172A" }, name: "Calibri" }
   ws.getRow(row).height = 28
   row++
@@ -644,6 +857,17 @@ export async function GET(req: NextRequest) {
   const barRow = row
   placeChartImage(ws, wb, barPng, barRow, barRowSpan)
   row += barRowSpan + 1
+
+  // ── Section: Balance Acumulado (line chart) ──
+  ws.mergeCells(`B${row}:H${row}`)
+  ws.getCell(`B${row}`).value = "Balance Acumulado"
+  ws.getCell(`B${row}`).font = { bold: true, size: 14, color: { argb: "FF0F172A" }, name: "Calibri" }
+  ws.getRow(row).height = 28
+  row++
+
+  const balanceRow = row
+  placeChartImage(ws, wb, balancePng, balanceRow, balanceRowSpan)
+  row += balanceRowSpan + 1
 
   // ── Section: Desglose Completo - Gastos ──
   ws.mergeCells(`B${row}:H${row}`)
