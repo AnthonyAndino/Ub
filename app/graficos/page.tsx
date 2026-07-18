@@ -174,38 +174,44 @@ export default async function GraficosPage() {
             </div>
           </div>
 
-          <div className="relative w-full overflow-hidden">
-            <svg className="w-full h-auto min-h-[250px]" viewBox="0 0 600 250" fill="none">
-              <line x1="50" y1="40" x2="570" y2="40" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="50" y1="92.5" x2="570" y2="92.5" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="50" y1="145" x2="570" y2="145" stroke="#f1f5f9" strokeWidth="1" />
-              <line x1="50" y1="197.5" x2="570" y2="197.5" stroke="#f8fafc" strokeWidth="2" />
+          {monthlyData.some((d) => d.income > 0 || d.expense > 0) ? (
+            <div className="relative w-full overflow-hidden">
+              <svg className="w-full h-auto min-h-[250px]" viewBox="0 0 600 250" fill="none">
+                <line x1="50" y1="40" x2="570" y2="40" stroke="#f1f5f9" strokeWidth="1" />
+                <line x1="50" y1="92.5" x2="570" y2="92.5" stroke="#f1f5f9" strokeWidth="1" />
+                <line x1="50" y1="145" x2="570" y2="145" stroke="#f1f5f9" strokeWidth="1" />
+                <line x1="50" y1="197.5" x2="570" y2="197.5" stroke="#f8fafc" strokeWidth="2" />
 
-              {monthlyData.map((d, i) => {
-                const xBase = 65 + i * 82
-                const barW = 30
-                const gap = 10
-                const hIncome = d.income > 0 ? (d.income / maxMonthly) * 140 : 2
-                const hExpense = d.expense > 0 ? (d.expense / maxMonthly) * 140 : 2
-                const yIncome = 200 - hIncome
-                const yExpense = 200 - hExpense
+                {monthlyData.map((d, i) => {
+                  const xBase = 65 + i * 82
+                  const barW = 30
+                  const gap = 10
+                  const hIncome = d.income > 0 ? (d.income / maxMonthly) * 140 : 2
+                  const hExpense = d.expense > 0 ? (d.expense / maxMonthly) * 140 : 2
+                  const yIncome = 200 - hIncome
+                  const yExpense = 200 - hExpense
 
-                return (
-                  <g key={i}>
-                    <rect x={xBase} y={yIncome} width={barW} height={hIncome} rx="4" fill="#10b981" className="cursor-pointer" />
-                    <rect x={xBase + barW + gap} y={yExpense} width={barW} height={hExpense} rx="4" fill="#ef4444" className="cursor-pointer" />
-                    <text x={xBase + barW / 2} y={yIncome - 6} textAnchor="middle" fill="#0f172a" className="text-[9px] font-bold">
-                      {d.income > 0 ? `${preferredCurrency}${Math.round(d.income)}` : ""}
-                    </text>
-                    <text x={xBase + barW + gap + barW / 2} y={yExpense - 6} textAnchor="middle" fill="#ef4444" className="text-[9px] font-bold">
-                      {d.expense > 0 ? `${preferredCurrency}${Math.round(d.expense)}` : ""}
-                    </text>
-                    <text x={xBase + barW / 2 + gap / 2} y="222" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{d.label}</text>
-                  </g>
-                )
-              })}
-            </svg>
-          </div>
+                  return (
+                    <g key={i}>
+                      <rect x={xBase} y={yIncome} width={barW} height={hIncome} rx="4" fill="#10b981" className="cursor-pointer" />
+                      <rect x={xBase + barW + gap} y={yExpense} width={barW} height={hExpense} rx="4" fill="#ef4444" className="cursor-pointer" />
+                      <text x={xBase + barW / 2} y={yIncome - 6} textAnchor="middle" fill="#0f172a" className="text-[9px] font-bold">
+                        {d.income > 0 ? `${preferredCurrency}${Math.round(d.income)}` : ""}
+                      </text>
+                      <text x={xBase + barW + gap + barW / 2} y={yExpense - 6} textAnchor="middle" fill="#ef4444" className="text-[9px] font-bold">
+                        {d.expense > 0 ? `${preferredCurrency}${Math.round(d.expense)}` : ""}
+                      </text>
+                      <text x={xBase + barW / 2 + gap / 2} y="222" textAnchor="middle" fill="#64748b" className="text-xs font-bold">{d.label}</text>
+                    </g>
+                  )
+                })}
+              </svg>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <p className="text-slate-400 text-sm font-medium">Sin ingresos ni gastos en los últimos 6 meses</p>
+            </div>
+          )}
         </div>
 
         {/* Chart 2 & 3 Grid */}

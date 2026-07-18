@@ -421,17 +421,23 @@ interface CategorySplit {
   color: string
 }
 
+function normalizeCategory(cat: string): string {
+  const c = cat.trim().toLowerCase()
+  return c.charAt(0).toUpperCase() + c.slice(1)
+}
+
 function aggregateByCategory(
   txs: (TxLike & { category: string })[],
   rate: number,
 ): CategorySplit[] {
   const map = new Map<string, { usd: number; lps: number }>()
   txs.forEach((t) => {
-    const entry = map.get(t.category) ?? { usd: 0, lps: 0 }
+    const key = normalizeCategory(t.category)
+    const entry = map.get(key) ?? { usd: 0, lps: 0 }
     const raw = t.amount.toNumber()
     if (t.currency === "$") entry.usd += raw
     else entry.lps += raw
-    map.set(t.category, entry)
+    map.set(key, entry)
   })
   return Array.from(map.entries())
     .map(([label, { usd, lps }]) => ({
@@ -704,18 +710,26 @@ export async function GET(req: NextRequest) {
   const balanceRowSpan = 16
 
   // ─── GENERATE CHART IMAGES (labels baked into PNG) ────
+  const userPref = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { currency: true },
+  })
+  const preferredCurrency = userPref?.currency ?? "L"
+
+  const barData = [
+    ...(incomeUsd > 0 ? [{ label: "Ingresos USD", value: incomeUsd, color: "#059669", fmt: "usd" as const }] : []),
+    ...(incomeLps > 0 ? [{ label: "Ingresos LPS", value: incomeLps, color: "#10B981", fmt: "lps" as const }] : []),
+    ...(expenseUsd > 0 ? [{ label: "Gastos USD", value: expenseUsd, color: "#DC2626", fmt: "usd" as const }] : []),
+    ...(expenseLps > 0 ? [{ label: "Gastos LPS", value: expenseLps, color: "#EF4444", fmt: "lps" as const }] : []),
+  ]
+
   const [donutPng, barPng, evolutionPng, balancePng] = await Promise.all([
     svgToPng(generateDonutSVG(expenseCategories, "Gastos por Categoría")),
     svgToPng(
-      generateBarChartSVG([
-        { label: "Ingresos USD", value: incomeUsd, color: "#059669", fmt: "usd" },
-        { label: "Ingresos LPS", value: incomeLps, color: "#10B981", fmt: "lps" },
-        { label: "Gastos USD", value: expenseUsd, color: "#DC2626", fmt: "usd" },
-        { label: "Gastos LPS", value: expenseLps, color: "#EF4444", fmt: "lps" },
-      ], "Ingresos vs Gastos del Mes"),
+      generateBarChartSVG(barData.length > 0 ? barData : [{ label: "Sin datos", value: 0, color: "#CBD5E1" }], "Ingresos vs Gastos del Mes"),
     ),
-    svgToPng(generateMonthlyEvolutionSVG(monthlyData, "Evolución Mensual", "L")),
-    svgToPng(generateBalanceLineSVG(balanceData, "Balance Acumulado", "L")),
+    svgToPng(generateMonthlyEvolutionSVG(monthlyData, "Evolución Mensual", preferredCurrency)),
+    svgToPng(generateBalanceLineSVG(balanceData, "Balance Acumulado", preferredCurrency)),
   ])
 
   // ─── CREATE WORKBOOK ────────────────────────
@@ -892,7 +906,7 @@ export async function GET(req: NextRequest) {
   // Table data
   expenseCategories.forEach((cat, i) => {
     const r = row + i
-    const txCount = expenses.filter((t) => t.category === cat.label).length
+    const txCount = expenses.filter((t) => normalizeCategory(t.category) === cat.label).length
     const pct = totalExpenseL > 0 ? (cat.valueL / totalExpenseL) * 100 : 0
 
     ws.getCell(r, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
@@ -951,7 +965,7 @@ export async function GET(req: NextRequest) {
 
   incomeCategories.forEach((cat, i) => {
     const r = row + i
-    const txCount = incomes.filter((t) => t.category === cat.label).length
+    const txCount = incomes.filter((t) => normalizeCategory(t.category) === cat.label).length
     const pct = totalIncomeL > 0 ? (cat.valueL / totalIncomeL) * 100 : 0
 
     ws.getCell(r, 2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: cat.color.replace("#", "FF") } }
