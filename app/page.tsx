@@ -22,15 +22,32 @@ export default async function Home() {
   })
   const currency = user?.currency ?? "L"
 
-  const monthStart = new Date()
-  monthStart.setDate(1)
-  monthStart.setHours(0, 0, 0, 0)
-  const monthEnd = new Date(monthStart)
-  monthEnd.setMonth(monthEnd.getMonth() + 1)
+  const HONDURAS_OFFSET_MS = 6 * 60 * 60 * 1000
+  const DAY_MS = 24 * 60 * 60 * 1000
 
-  const transaccionesMes = await prisma.transaction.findMany({
-    where: { userId, deletedAt: null, date: { gte: monthStart, lt: monthEnd } },
+  const now = new Date()
+  const localNow = new Date(now.getTime() - HONDURAS_OFFSET_MS)
+  const currentYear = localNow.getUTCFullYear()
+  const currentMonth = localNow.getUTCMonth()
+
+  const queryStart = new Date(Date.UTC(currentYear, currentMonth, 1))
+  const queryEnd = new Date(Date.UTC(currentYear, currentMonth + 1, 1))
+
+  const raw = await prisma.transaction.findMany({
+    where: {
+      userId,
+      deletedAt: null,
+      date: {
+        gte: new Date(queryStart.getTime() - DAY_MS),
+        lt: new Date(queryEnd.getTime() + DAY_MS),
+      },
+    },
     orderBy: { date: "asc" },
+  })
+
+  const transaccionesMes = raw.filter((t) => {
+    const local = new Date(t.date.getTime() - HONDURAS_OFFSET_MS)
+    return local.getUTCFullYear() === currentYear && local.getUTCMonth() === currentMonth
   })
 
   let ingresosL = 0
@@ -62,7 +79,8 @@ export default async function Home() {
   ]
 
   transaccionesMes.forEach((t) => {
-    const dia = new Date(t.date).getDate()
+    const local = new Date(t.date.getTime() - HONDURAS_OFFSET_MS)
+    const dia = local.getUTCDate()
     let indiceSemana = Math.floor((dia - 1) / 7)
     if (indiceSemana > 3) indiceSemana = 3
     const enL = amountToLempiras(t.amount.toNumber(), t.currency, exchangeRate)
