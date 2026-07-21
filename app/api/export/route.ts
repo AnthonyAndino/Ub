@@ -116,8 +116,8 @@ function generateDonutSVG(categories: CategorySplit[], title: string = "Gastos p
   if (total === 0) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
       <rect width="${width}" height="${height}" fill="white" rx="8"/>
-      <text x="${width / 2}" y="40" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
-      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" fill="#94A3B8">Sin datos este mes</text>
+      <text x="${width / 2}" y="40" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+      <text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#94A3B8">Sin datos este mes</text>
     </svg>`
   }
 
@@ -174,8 +174,8 @@ function generateDonutSVG(categories: CategorySplit[], title: string = "Gastos p
       const labelR = (outerR + innerR) / 2
       const pos = polarToCartesian(cx, cy, labelR, midAngle)
       sliceLabels.push(
-        `<text x="${pos.x.toFixed(1)}" y="${(pos.y - 4).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="white">${escapeXml(truncateLabel(seg.label, 10))}</text>`,
-        `<text x="${pos.x.toFixed(1)}" y="${(pos.y + 10).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="9" fill="white">${pct.toFixed(0)}%</text>`,
+        `<text x="${pos.x.toFixed(1)}" y="${(pos.y - 4).toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="white">${escapeXml(truncateLabel(seg.label, 10))}</text>`,
+        `<text x="${pos.x.toFixed(1)}" y="${(pos.y + 10).toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="9" fill="white">${pct.toFixed(0)}%</text>`,
       )
     }
 
@@ -190,14 +190,14 @@ function generateDonutSVG(categories: CategorySplit[], title: string = "Gastos p
     legendY += 28
     return `
       <rect x="${legendX}" y="${y - 10}" width="12" height="12" rx="2" fill="${cat.color}" />
-      <text x="${legendX + 18}" y="${y}" font-family="Calibri, Arial, sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(truncateLabel(cat.label))}</text>
-      <text x="${legendX + 18}" y="${y + 14}" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#64748B">${escapeXml(categoryAmountLabel(cat))} · ${pct.toFixed(1)}%</text>
+      <text x="${legendX + 18}" y="${y}" font-family="sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(truncateLabel(cat.label))}</text>
+      <text x="${legendX + 18}" y="${y + 14}" font-family="sans-serif" font-size="9" fill="#64748B">${escapeXml(categoryAmountLabel(cat))} · ${pct.toFixed(1)}%</text>
     `
   })
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${legendX}" y="22" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${legendX}" y="22" font-family="sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
     ${paths.join("\n")}
     <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="white" />
     ${sliceLabels.join("\n")}
@@ -230,9 +230,9 @@ function generateBarChartSVG(
 
   const topLegend = `
     <rect x="${width / 2 - 85}" y="38" width="12" height="12" rx="2" fill="#059669" />
-    <text x="${width / 2 - 69}" y="48" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#059669">Ingresos</text>
+    <text x="${width / 2 - 69}" y="48" font-family="sans-serif" font-size="12" font-weight="bold" fill="#059669">Ingresos</text>
     <rect x="${width / 2 + 5}" y="38" width="12" height="12" rx="2" fill="#DC2626" />
-    <text x="${width / 2 + 21}" y="48" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#DC2626">Gastos</text>
+    <text x="${width / 2 + 21}" y="48" font-family="sans-serif" font-size="12" font-weight="bold" fill="#DC2626">Gastos</text>
   `
 
   const barsAndLabels = data.map((d, i) => {
@@ -247,14 +247,14 @@ function generateBarChartSVG(
     const labelX = x + barWidth / 2
     return `
       <rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${d.color}" rx="6" />
-      <text x="${labelX}" y="${y - 8}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="${d.color}">${escapeXml(valueLabel)}</text>
-      <text x="${labelX}" y="${chartBottom + 18}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
+      <text x="${labelX}" y="${y - 8}" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="${d.color}">${escapeXml(valueLabel)}</text>
+      <text x="${labelX}" y="${chartBottom + 18}" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
     `
   })
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${width / 2}" y="26" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${width / 2}" y="26" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
     ${topLegend}
     ${gridLines.join("\n")}
     <line x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" stroke="#CBD5E1" stroke-width="1" />
@@ -285,15 +285,15 @@ function generateMonthlyEvolutionSVG(
     const y = chartBottom - (i / 4) * chartHeight
     const val = Math.round((i / 4) * maxValue)
     gridLines.push(`<line x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}" stroke="#E2E8F0" stroke-width="1" />`)
-    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
+    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
   }
 
   // Top legend (visible without scrolling)
   const topLegend = `
     <rect x="${width / 2 - 82}" y="40" width="12" height="12" rx="2" fill="#10B981" />
-    <text x="${width / 2 - 66}" y="50" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#059669">Ingresos</text>
+    <text x="${width / 2 - 66}" y="50" font-family="sans-serif" font-size="12" font-weight="bold" fill="#059669">Ingresos</text>
     <rect x="${width / 2 + 5}" y="40" width="12" height="12" rx="2" fill="#EF4444" />
-    <text x="${width / 2 + 21}" y="50" font-family="Calibri, Arial, sans-serif" font-size="12" font-weight="bold" fill="#DC2626">Gastos</text>
+    <text x="${width / 2 + 21}" y="50" font-family="sans-serif" font-size="12" font-weight="bold" fill="#DC2626">Gastos</text>
   `
 
   const bars = data.map((d, i) => {
@@ -310,16 +310,16 @@ function generateMonthlyEvolutionSVG(
     return `
       <rect x="${x1}" y="${yIncome}" width="${barWidth}" height="${hIncome}" fill="#10B981" rx="4" />
       <rect x="${x2}" y="${yExpense}" width="${barWidth}" height="${hExpense}" fill="#EF4444" rx="4" />
-      <text x="${x1 + barWidth / 2}" y="${yIncome - 6}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="8" font-weight="bold" fill="#059669">${escapeXml(incLabel)}</text>
-      <text x="${x2 + barWidth / 2}" y="${yExpense - 6}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="8" font-weight="bold" fill="#DC2626">${escapeXml(expLabel)}</text>
-      <text x="${groupCx}" y="${chartBottom + 20}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
+      <text x="${x1 + barWidth / 2}" y="${yIncome - 6}" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="bold" fill="#059669">${escapeXml(incLabel)}</text>
+      <text x="${x2 + barWidth / 2}" y="${yExpense - 6}" text-anchor="middle" font-family="sans-serif" font-size="8" font-weight="bold" fill="#DC2626">${escapeXml(expLabel)}</text>
+      <text x="${groupCx}" y="${chartBottom + 20}" text-anchor="middle" font-family="sans-serif" font-size="11" font-weight="bold" fill="#334155">${escapeXml(d.label)}</text>
     `
   })
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${width / 2}" y="26" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
-    <text x="${width / 2}" y="44" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#94A3B8">Últimos 6 meses</text>
+    <text x="${width / 2}" y="26" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${width / 2}" y="44" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#94A3B8">Últimos 6 meses</text>
     ${topLegend}
     ${gridLines.join("\n")}
     <line x1="${chartLeft}" y1="${chartBottom}" x2="${chartRight}" y2="${chartBottom}" stroke="#CBD5E1" stroke-width="1" />
@@ -351,7 +351,7 @@ function generateBalanceLineSVG(
     const y = chartBottom - (i / 4) * chartHeight
     const val = Math.round(minVal + (i / 4) * range)
     gridLines.push(`<line x1="${chartLeft}" y1="${y}" x2="${chartRight}" y2="${y}" stroke="#E2E8F0" stroke-width="1" />`)
-    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="Calibri, Arial, sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
+    gridLines.push(`<text x="${chartLeft - 8}" y="${y + 4}" text-anchor="end" font-family="sans-serif" font-size="9" fill="#94A3B8">${currencySymbol}${val.toLocaleString("en-US")}</text>`)
   }
 
   const points = data.map((d, i) => {
@@ -367,15 +367,15 @@ function generateBalanceLineSVG(
     const label = `${currencySymbol}${Math.round(p.val).toLocaleString("en-US")}`
     return `
       <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5" fill="#2563EB" stroke="white" stroke-width="2" />
-      <text x="${p.x.toFixed(1)}" y="${(p.y - 10).toFixed(1)}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="9" font-weight="bold" fill="#0F172A">${escapeXml(label)}</text>
-      <text x="${p.x.toFixed(1)}" y="${chartBottom + 18}" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(p.label)}</text>
+      <text x="${p.x.toFixed(1)}" y="${(p.y - 10).toFixed(1)}" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#0F172A">${escapeXml(label)}</text>
+      <text x="${p.x.toFixed(1)}" y="${chartBottom + 18}" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="bold" fill="#334155">${escapeXml(p.label)}</text>
     `
   })
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="${width}" height="${height}" fill="white" rx="8" />
-    <text x="${width / 2}" y="28" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
-    <text x="${width / 2}" y="44" text-anchor="middle" font-family="Calibri, Arial, sans-serif" font-size="10" fill="#94A3B8">Evolución del balance mes a mes</text>
+    <text x="${width / 2}" y="28" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#0F172A">${escapeXml(title)}</text>
+    <text x="${width / 2}" y="44" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#94A3B8">Evolución del balance mes a mes</text>
     <defs>
       <linearGradient id="balGrad" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="#2563EB" stop-opacity="0.2" />
