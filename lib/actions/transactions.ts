@@ -148,7 +148,13 @@ export async function listAllTransactions(filters: {
 
   if (filters.month) {
     const [y, m] = filters.month.split("-").map(Number)
-    where.date = { gte: new Date(y, m - 1, 1), lt: new Date(y, m, 1) }
+    const DAY_MS = 24 * 60 * 60 * 1000
+    const start = new Date(Date.UTC(y, m - 1, 1))
+    const end = new Date(Date.UTC(y, m, 1))
+    where.date = {
+      gte: new Date(start.getTime() - DAY_MS),
+      lt: new Date(end.getTime() + DAY_MS),
+    }
   }
 
   if (filters.search) {
@@ -164,7 +170,18 @@ export async function listAllTransactions(filters: {
     include: { wishlistItem: { select: { id: true, name: true } } },
   })
 
-  return data.map((t) => ({
+  let result: typeof data = data
+
+  if (filters.month) {
+    const [y, m] = filters.month.split("-").map(Number)
+    const HONDURAS_OFFSET_MS = 6 * 60 * 60 * 1000
+    result = data.filter((t) => {
+      const local = new Date(t.date.getTime() - HONDURAS_OFFSET_MS)
+      return local.getFullYear() === y && local.getMonth() === m - 1
+    })
+  }
+
+  return result.map((t) => ({
     id: t.id,
     type: t.type,
     amount: t.amount.toNumber(),
